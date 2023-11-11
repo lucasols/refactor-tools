@@ -5,8 +5,8 @@
   "description": "",
   "main": "./dist/extension.js",
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "compile": "tsc -p ./tsconfig.prod.json",
+    "watch": "tsc -watch -p ./tsconfig.prod.json"
   },
   "keywords": [],
   "author": "",
