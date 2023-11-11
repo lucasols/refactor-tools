@@ -1,0 +1,32 @@
+{
+  "name": "refactools",
+  "publisher": "lucasols",
+  "version": "0.1.0",
+  "description": "",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.9.0",
+    "@types/vscode": "^1.84.1",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "vscode": ">=1.83.0",
+    "node": ">=18.0.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "refactools.listRefactorings",
+        "title": "List Refactorings",
+        "category": "Refactools"
+      }
+    ]
+  }
+}
