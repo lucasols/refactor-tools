@@ -99,6 +99,7 @@ export type RefacToolsCtx = {
   }
   fs: {
     memFs: MemFS
+    createMemFsPath: (path: string) => void
     getWorkspacePath: () => string
     getPathRelativeToWorkspace: (relativePath: string) => string
     writeFile: (filePath: string, content: string) => Thenable<void>
@@ -614,6 +615,11 @@ export async function initializeCtx(
     },
     fs: {
       memFs,
+      createMemFsPath(path) {
+        throwIfCancelled()
+
+        return `refactoolsfs:/${path}`
+      },
       getWorkspacePath() {
         throwIfCancelled()
 
