@@ -39,15 +39,16 @@ type RefactorFn = (ctx: RefacToolsCtx) => Promise<void> | void
 export type RunResult = {}
 
 type EditorMethods = {
-  getSelected: () => Selected | null
-  format: () => void
-  setContent: (content: string) => void
+  getSelected: () => Thenable<Selected | null>
+  getCursorPos: () => Thenable<number>
+  format: () => Thenable<void>
+  setContent: (content: string) => Thenable<void>
   replaceContent: (
     content: string,
     range: { start: number; end: number }
-  ) => void
-  insertContent: (content: string, position: number) => void
-  focus: () => void
+  ) => Thenable<void>
+  insertContent: (content: string, position: number) => Thenable<void>
+  focus: () => Thenable<void>
   filename: string
   filepath: string
   getContent: () => string
@@ -192,9 +193,9 @@ export async function initializeCtx(
     return
   }
 
-  function focusEditor(editor: vsc.TextEditor | undefined) {
+  async function focusEditor(editor: vsc.TextEditor | undefined) {
     if (editor) {
-      vscode.window.showTextDocument(editor.document)
+      await vscode.window.showTextDocument(editor.document)
     }
   }
 
@@ -307,7 +308,7 @@ export async function initializeCtx(
   async function promptText(message: string) {
     throwIfCancelled()
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await sleep(50)
 
     const input = await vscode.window.showInputBox({
       prompt: message,
@@ -317,41 +318,49 @@ export async function initializeCtx(
   }
 
   function getEditorMethods(editor: vsc.TextEditor): EditorMethods {
-    const getSelected: RefacToolsCtx['activeEditor']['getSelected'] = () => {
-      if (isCancelled) return null
+    const getSelected: RefacToolsCtx['activeEditor']['getSelected'] =
+      async () => {
+        if (isCancelled) return null
 
-      focusEditor(editor)
+        await focusEditor(editor)
 
-      if (!editor) {
-        return null
+        if (!editor) {
+          return null
+        }
+
+        if (editor.selection.isEmpty) {
+          return null
+        }
+
+        const text = editor.document.getText(editor.selection)
+
+        return {
+          text: text,
+          range: {
+            start: editor.document.offsetAt(editor.selection.start),
+            end: editor.document.offsetAt(editor.selection.end),
+          },
+          editorUri: editor.document.uri,
+          replaceWith: (code: string) => {
+            editor.edit((editBuilder) => {
+              editBuilder.replace(editor.selection, code)
+            })
+          },
+        }
       }
-
-      if (editor.selection.isEmpty) {
-        return null
-      }
-
-      const text = editor.document.getText(editor.selection)
-
-      return {
-        text: text,
-        range: {
-          start: editor.document.offsetAt(editor.selection.start),
-          end: editor.document.offsetAt(editor.selection.end),
-        },
-        editorUri: editor.document.uri,
-        replaceWith: (code: string) => {
-          editor.edit((editBuilder) => {
-            editBuilder.replace(editor.selection, code)
-          })
-        },
-      }
-    }
     return {
       getSelected,
-      setContent(content) {
+      async getCursorPos() {
+        if (isCancelled) return 0
+
+        await focusEditor(editor)
+
+        return editor.document.offsetAt(editor.selection.active)
+      },
+      async setContent(content) {
         if (isCancelled) return
 
-        focusEditor(editor)
+        await focusEditor(editor)
 
         editor?.edit((editBuilder) => {
           const fullRange = editor.document.validateRange(
@@ -364,26 +373,26 @@ export async function initializeCtx(
           editBuilder.replace(fullRange, content)
         })
       },
-      format: () => {
+      format: async () => {
         if (isCancelled) return
 
-        focusEditor(editor)
+        await focusEditor(editor)
 
         vscode.commands.executeCommand('editor.action.formatDocument')
       },
-      insertContent(content, position) {
+      async insertContent(content, position) {
         if (isCancelled) return
 
-        focusEditor(editor)
+        await focusEditor(editor)
 
         editor?.edit((editBuilder) => {
           editBuilder.insert(editor.document.positionAt(position), content)
         })
       },
-      replaceContent(content, range) {
+      async replaceContent(content, range) {
         if (isCancelled) return
 
-        focusEditor(editor)
+        await focusEditor(editor)
 
         editor?.edit((editBuilder) => {
           editBuilder.replace(
@@ -398,10 +407,10 @@ export async function initializeCtx(
       filename: editor.document.fileName,
       filepath: editor.document.uri.fsPath,
       getContent: () => editor.document.getText(),
-      focus: () => {
+      focus: async () => {
         if (isCancelled) return
 
-        focusEditor(editor)
+        await focusEditor(editor)
       },
     }
   }
@@ -458,7 +467,7 @@ export async function initializeCtx(
           return false
         }
 
-        const selectedText = getEditorMethods(
+        const selectedText = await getEditorMethods(
           vscode.window.activeTextEditor!
         ).getSelected()
 
@@ -781,6 +790,10 @@ export async function initializeCtx(
     activeEditor: getEditorMethods(initialActiveEditor),
     showDiff,
   }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /** @internal */
