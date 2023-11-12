@@ -1,0 +1,7 @@
+.vscode
+node_modules
+out/
+src/
+tsconfig.json
+tsconfig.prod.json
+.vscode-test/

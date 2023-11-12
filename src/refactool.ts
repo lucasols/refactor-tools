@@ -51,6 +51,7 @@ type EditorMethods = {
   focus: () => Thenable<void>
   filename: string
   filepath: string
+  editorUri: vsc.Uri
   getContent: () => string
 }
 
@@ -133,11 +134,15 @@ export type RefacToolsCtx = {
   activeEditor: EditorMethods
   showDiff: (props: {
     title?: string
-    original: string | Selected
+    original:
+      | string
+      | Selected
+      | { editor: EditorMethods; replaceAtOffset: number }
     refactored: string
     ext?: string
   }) => Promise<string | false>
   onCancel: (fn: () => void) => void
+  forceCancel: () => void
   vscodeCtx: typeof vsc
   prompt: {
     text: (message: string) => Promise<string | false>
@@ -214,6 +219,8 @@ export async function initializeCtx(
     const leftUri =
       typeof original === 'string'
         ? vscode.Uri.parse(`refactoolsfs:/diff.original${ext || ''}`)
+        : 'editor' in original
+        ? original.editor.editorUri
         : original.editorUri
 
     if (typeof original === 'string') {
@@ -231,13 +238,20 @@ export async function initializeCtx(
 
     if (typeof original !== 'string') {
       const originalFileContent = (
-        await vscode.workspace.fs.readFile(original.editorUri)
+        await vscode.workspace.fs.readFile(leftUri)
       ).toString()
 
-      refactoredFile =
-        originalFileContent.slice(0, original.range.start) +
-        refactored +
-        originalFileContent.slice(original.range.end)
+      if ('replaceAtOffset' in original) {
+        refactoredFile =
+          originalFileContent.slice(0, original.replaceAtOffset) +
+          refactored +
+          originalFileContent.slice(original.replaceAtOffset)
+      } else {
+        refactoredFile =
+          originalFileContent.slice(0, original.range.start) +
+          refactored +
+          originalFileContent.slice(original.range.end)
+      }
     }
 
     memFs.writeFile(virtualRefactoredFileUri, Buffer.from(refactoredFile), {
@@ -350,6 +364,7 @@ export async function initializeCtx(
       }
     return {
       getSelected,
+      editorUri: editor.document.uri,
       async getCursorPos() {
         if (isCancelled) return 0
 
@@ -424,6 +439,9 @@ export async function initializeCtx(
   refactorCtx = {
     onCancel(fn) {
       refactoringEvents.on('cancel', fn)
+    },
+    forceCancel() {
+      refactoringEvents.emit('cancelParent')
     },
     prompt: {
       text: promptText,
