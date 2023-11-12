@@ -1,0 +1,17 @@
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+dependencies:
+  runcheck:
+    specifier: ^0.53.0
+    version: 0.53.0
+
+packages:
+
+  /runcheck@0.53.0:
+    resolution: {integrity: sha512-r2HmRfj2Q9Pyaja79GSVS2Ld/IXx+hr4MS5e51TxrI+Mjf10R49ozZP1YFMJtVpCv8r7ZAor9JB1b1v22Y+2iQ==}
+    engines: {node: '>=14.6.0'}
+    dev: false

@@ -3,7 +3,7 @@
   "publisher": "lucasols",
   "version": "0.1.0",
   "description": "",
-  "main": "./dist/extension.js",
+  "main": "./dist/main.js",
   "scripts": {
     "compile": "tsc -p ./tsconfig.prod.json",
     "watch": "tsc -watch -p ./tsconfig.prod.json"
@@ -24,9 +24,45 @@
     "commands": [
       {
         "command": "refactools.listRefactorings",
-        "title": "List Refactorings",
+        "title": "Start Refactoring",
         "category": "Refactools"
+      },
+      {
+        "command": "refactools.refactoringOptions",
+        "title": "Current refactoring options",
+        "category": "Refactools"
+      },
+      {
+        "command": "refactools.updateWorkspaceApiTypes",
+        "title": "Create/Update workspace refactools API types",
+        "category": "Refactools"
+      },
+      {
+        "command": "refactools.acceptRefactoring",
+        "title": "Accept Refactoring",
+        "category": "Refactools",
+        "icon": "$(check)"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "refactools.refactoringOptions",
+          "when": "refactools.refactoringOptionsAvailable"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "refactools.acceptRefactoring",
+          "when": "isInDiffEditor",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "esbuild": "^0.19.5",
+    "evtmitter": "^0.3.3",
+    "minimatch": "^9.0.3"
   }
 }
