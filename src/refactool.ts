@@ -28,7 +28,7 @@ function config(config: RefactorConfig) {
 
 let refactorCtx: RefacToolsCtx | null = null
 
-type RefactorFn = (ctx: RefacToolsCtx) => Promise<void> | void
+type RefactorFn<V extends string> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
 
 /** @internal */
 export type RunResult = {}
@@ -953,12 +953,14 @@ export const refacTools = {
   runRefactor,
 }
 
-async function runRefactor(fn: RefactorFn): Promise<RunResult> {
+async function runRefactor<V extends string = string>(
+  fn: RefactorFn<V>,
+): Promise<RunResult> {
   if (!refactorCtx) {
     throw new Error('Refactor context not set')
   }
 
-  await fn(refactorCtx)
+  await fn(refactorCtx as any)
 
   return refactorCtx.runResult
 }
