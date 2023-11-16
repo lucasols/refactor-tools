@@ -11,7 +11,7 @@ type LanguageId = 'javascript' | 'typescript' | 'typescriptreact' | 'json' | (st
 
 export type RefactorConfig = {
   name: string
-  description: string
+  description?: string
   enabledWhen?: {
     hasSelection?: true
     activeFileContains?: string
@@ -64,8 +64,8 @@ type Selected = {
   editorUri: vsc.Uri
 }
 
-export type RefacToolsCtx = {
-  variant: string | null
+export type RefacToolsCtx<Variants extends string = string> = {
+  variant: Variants
   runResult: RunResult
   history: {
     getLast: () => {
@@ -633,7 +633,7 @@ export async function initializeCtx(
       },
     },
     runResult: {},
-    variant,
+    variant: variant as any,
     vscodeCtx: vscode,
     ide: {
       setGeneralProgress(progress) {
