@@ -7,7 +7,6 @@ import {
   HistoryEntry,
   RefactorConfig,
   RefactoringEvents,
-  RunResult,
   initializeCtx,
   refacTools,
 } from './refactool'
@@ -57,8 +56,8 @@ function createOrUpdateApiDefinition() {
   const apiDefinitionContent = dedent`
     declare const refacTools: typeof import('${importPath}').refacTools
 
-    declare type RefacToolsCtx =
-      import('${importPath}').RefacToolsCtx
+    declare type RefacToolsCtx<V extends string> =
+      import('${importPath}').RefacToolsCtx<V>
   `
 
   vscode.workspace.fs.writeFile(

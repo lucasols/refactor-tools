@@ -26,12 +26,9 @@ function config(config: RefactorConfig) {
   return undefined
 }
 
-let refactorCtx: RefacToolsCtx | null = null
+let refactorCtx: RefacToolsCtx<string> | null = null
 
 type RefactorFn<V extends string> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
-
-/** @internal */
-export type RunResult = {}
 
 type EditorMethods = {
   getSelected: () => Promise<Selected | null>
@@ -64,9 +61,9 @@ type Selected = {
   editorUri: vsc.Uri
 }
 
-export type RefacToolsCtx<Variants extends string = string> = {
+export type RefacToolsCtx<Variants extends string> = {
   variant: Variants
-  runResult: RunResult
+  runResult: {}
   history: {
     getLast: () => {
       get: <T>(key: string) => T | undefined
@@ -231,7 +228,7 @@ export async function initializeCtx(
     isCancelled = true
   })
 
-  const showDiff: RefacToolsCtx['showDiff'] = async ({
+  const showDiff: RefacToolsCtx<string>['showDiff'] = async ({
     title,
     original,
     refactored,
@@ -365,40 +362,41 @@ export async function initializeCtx(
       return editor
     }
 
-    const getSelected: RefacToolsCtx['activeEditor']['getSelected'] = async () => {
-      if (isCancelled) return null
+    const getSelected: RefacToolsCtx<string>['activeEditor']['getSelected'] =
+      async () => {
+        if (isCancelled) return null
 
-      const editor = await getEditor()
+        const editor = await getEditor()
 
-      await focusEditor(editor)
+        await focusEditor(editor)
 
-      if (!editor) {
-        return null
+        if (!editor) {
+          return null
+        }
+
+        if (editor.selection.isEmpty) {
+          return null
+        }
+
+        const text = editor.document.getText(editor.selection)
+
+        return {
+          text: text,
+          language: editor.document.languageId as LanguageId,
+          range: {
+            start: editor.document.offsetAt(editor.selection.start),
+            end: editor.document.offsetAt(editor.selection.end),
+          },
+          editorUri: editor.document.uri,
+          replaceWith: async (code: string) => {
+            const editor = await getEditor()
+
+            await editor.edit((editBuilder) => {
+              editBuilder.replace(editor.selection, code)
+            })
+          },
+        }
       }
-
-      if (editor.selection.isEmpty) {
-        return null
-      }
-
-      const text = editor.document.getText(editor.selection)
-
-      return {
-        text: text,
-        language: editor.document.languageId as LanguageId,
-        range: {
-          start: editor.document.offsetAt(editor.selection.start),
-          end: editor.document.offsetAt(editor.selection.end),
-        },
-        editorUri: editor.document.uri,
-        replaceWith: async (code: string) => {
-          const editor = await getEditor()
-
-          await editor.edit((editBuilder) => {
-            editBuilder.replace(editor.selection, code)
-          })
-        },
-      }
-    }
     return {
       getSelected,
       getLanguage: () => {
@@ -496,7 +494,7 @@ export async function initializeCtx(
     disposeCommandPaletteOptions?.()
   })
 
-  const createTempFile: RefacToolsCtx['fs']['createTempFile'] = (
+  const createTempFile: RefacToolsCtx<string>['fs']['createTempFile'] = (
     extension: string,
     initialContent: string = '',
   ) => {
@@ -953,9 +951,7 @@ export const refacTools = {
   runRefactor,
 }
 
-async function runRefactor<V extends string = string>(
-  fn: RefactorFn<V>,
-): Promise<RunResult> {
+async function runRefactor<V extends string = string>(fn: RefactorFn<V>): Promise<{}> {
   if (!refactorCtx) {
     throw new Error('Refactor context not set')
   }
