@@ -14,7 +14,7 @@ refacTools.config({
 })
 
 refacTools.runRefactor(async (ctx) => {
-  const selectedCode = ctx.activeEditor.getSelected()
+  const selectedCode = await ctx.activeEditor.getSelected()
 
   if (!selectedCode) {
     throw new Error('No code selected')
@@ -38,13 +38,13 @@ refacTools.runRefactor(async (ctx) => {
 
     if (!acceptedRefactoring) return
 
-    ctx.activeEditor.setContent(refactoredCode)
-    ctx.activeEditor.format()
+    await ctx.activeEditor.setContent(refactoredCode)
+    await ctx.activeEditor.format()
 
     return
   }
 
   selectedCode.replaceWith(refactoredCode)
 
-  ctx.activeEditor.format()
+  await ctx.activeEditor.format()
 })

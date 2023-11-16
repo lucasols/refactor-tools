@@ -7,12 +7,7 @@ import { posix } from 'path'
 
 // Version: 0.1.0
 
-type LanguageId =
-  | 'javascript'
-  | 'typescript'
-  | 'typescriptreact'
-  | 'json'
-  | (string & {})
+type LanguageId = 'javascript' | 'typescript' | 'typescriptreact' | 'json' | (string & {})
 
 export type RefactorConfig = {
   name: string
@@ -45,7 +40,7 @@ type EditorMethods = {
   setContent: (content: string) => Thenable<void>
   replaceContent: (
     content: string,
-    range: { start: number; end: number }
+    range: { start: number; end: number },
   ) => Thenable<void>
   insertContent: (content: string, position: number) => Thenable<void>
   focus: () => Thenable<void>
@@ -88,7 +83,7 @@ export type RefacToolsCtx = {
       action: (runCtx: {
         abort: AbortController
         token: vsc.CancellationToken
-      }) => Promise<T>
+      }) => Promise<T>,
     ) => Thenable<T>
     setCommandPaletteOptions: <T extends string>(
       options: {
@@ -96,11 +91,17 @@ export type RefacToolsCtx = {
         description?: string
         value: T
       }[],
-      onSelected: (value: T) => void
+      onSelected: (value: T) => void,
     ) => void
   }
   fs: {
     memFs: MemFS
+    createTempFile: (initialContent?: string) => {
+      uri: vsc.Uri
+      dispose: () => void
+      update: (content: string) => void
+      getContent: () => Promise<string>
+    }
     createMemFsPath: (path: string) => void
     getWorkspacePath: () => string
     getPathRelativeToWorkspace: (relativePath: string) => string
@@ -121,7 +122,7 @@ export type RefacToolsCtx = {
         filesFilter?: string[] | false
         includeFolders?: true | string[]
         recursive?: boolean
-      }
+      },
     ) => Thenable<
       {
         path: string
@@ -134,10 +135,7 @@ export type RefacToolsCtx = {
   activeEditor: EditorMethods
   showDiff: (props: {
     title?: string
-    original:
-      | string
-      | Selected
-      | { editor: EditorMethods; replaceAtOffset: number }
+    original: string | Selected | { editor: EditorMethods; replaceAtOffset: number }
     refactored: string
     ext?: string
   }) => Promise<string | false>
@@ -156,16 +154,13 @@ export type RefacToolsCtx = {
       title: string
       defaultValue?: T[]
     }) => Promise<T[] | false>
-    waitTextSelection: (
-      message: string,
-      buttonLabel: string
-    ) => Promise<Selected | false>
+    waitTextSelection: (message: string, buttonLabel: string) => Promise<Selected | false>
     dialog: (
       message: string,
       options?: {
         title?: string
         buttons?: string[]
-      }
+      },
     ) => Promise<string | boolean>
   }
 }
@@ -182,7 +177,7 @@ export async function initializeCtx(
   refactoringEvents: Emitter<RefactoringEvents>,
   variant: string | null,
   activeWorkspaceFolder: vsc.WorkspaceFolder,
-  setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>
+  setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>,
 ) {
   let isCancelled = false
 
@@ -217,11 +212,10 @@ export async function initializeCtx(
     throwIfCancelled()
 
     const leftUri =
-      typeof original === 'string'
-        ? vscode.Uri.parse(`refactoolsfs:/diff.original${ext || ''}`)
-        : 'editor' in original
-        ? original.editor.editorUri
-        : original.editorUri
+      typeof original === 'string' ?
+        vscode.Uri.parse(`refactoolsfs:/diff.original${ext || ''}`)
+      : 'editor' in original ? original.editor.editorUri
+      : original.editorUri
 
     if (typeof original === 'string') {
       memFs.writeFile(leftUri, Buffer.from(original), {
@@ -231,15 +225,13 @@ export async function initializeCtx(
     }
 
     const virtualRefactoredFileUri = vscode.Uri.parse(
-      `refactoolsfs:/diff.refactored${ext || ''}`
+      `refactoolsfs:/diff.refactored${ext || ''}`,
     )
 
     let refactoredFile = refactored
 
     if (typeof original !== 'string') {
-      const originalFileContent = (
-        await vscode.workspace.fs.readFile(leftUri)
-      ).toString()
+      const originalFileContent = (await vscode.workspace.fs.readFile(leftUri)).toString()
 
       if ('replaceAtOffset' in original) {
         refactoredFile =
@@ -266,7 +258,7 @@ export async function initializeCtx(
       title ?? 'Confirm refactoring',
       {
         preview: true,
-      }
+      },
     )
 
     const userResponse = defer<string | false>()
@@ -275,20 +267,18 @@ export async function initializeCtx(
       'refactools.acceptRefactoring',
       () => {
         userResponse.resolve(
-          typeof original === 'string'
-            ? refactored
-            : memFs.readFile(virtualRefactoredFileUri).toString()
+          typeof original === 'string' ? refactored : (
+            memFs.readFile(virtualRefactoredFileUri).toString()
+          ),
         )
-      }
+      },
     )
 
-    const previewIsClosedDispose = vscode.workspace.onDidCloseTextDocument(
-      (doc) => {
-        if (doc.uri.toString() === virtualRefactoredFileUri.toString()) {
-          userResponse.resolve(false)
-        }
+    const previewIsClosedDispose = vscode.workspace.onDidCloseTextDocument((doc) => {
+      if (doc.uri.toString() === virtualRefactoredFileUri.toString()) {
+        userResponse.resolve(false)
       }
-    )
+    })
 
     refactoringEvents.on('cancel', () => {
       userResponse.resolve(false)
@@ -301,8 +291,7 @@ export async function initializeCtx(
 
     // find and close the diff editor
     const diffEditor = vscode.window.visibleTextEditors.find(
-      (editor) =>
-        editor.document.uri.toString() === virtualRefactoredFileUri.toString()
+      (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
     )
 
     if (diffEditor) {
@@ -332,36 +321,35 @@ export async function initializeCtx(
   }
 
   function getEditorMethods(editor: vsc.TextEditor): EditorMethods {
-    const getSelected: RefacToolsCtx['activeEditor']['getSelected'] =
-      async () => {
-        if (isCancelled) return null
+    const getSelected: RefacToolsCtx['activeEditor']['getSelected'] = async () => {
+      if (isCancelled) return null
 
-        await focusEditor(editor)
+      await focusEditor(editor)
 
-        if (!editor) {
-          return null
-        }
-
-        if (editor.selection.isEmpty) {
-          return null
-        }
-
-        const text = editor.document.getText(editor.selection)
-
-        return {
-          text: text,
-          range: {
-            start: editor.document.offsetAt(editor.selection.start),
-            end: editor.document.offsetAt(editor.selection.end),
-          },
-          editorUri: editor.document.uri,
-          replaceWith: (code: string) => {
-            editor.edit((editBuilder) => {
-              editBuilder.replace(editor.selection, code)
-            })
-          },
-        }
+      if (!editor) {
+        return null
       }
+
+      if (editor.selection.isEmpty) {
+        return null
+      }
+
+      const text = editor.document.getText(editor.selection)
+
+      return {
+        text: text,
+        range: {
+          start: editor.document.offsetAt(editor.selection.start),
+          end: editor.document.offsetAt(editor.selection.end),
+        },
+        editorUri: editor.document.uri,
+        replaceWith: (code: string) => {
+          editor.edit((editBuilder) => {
+            editBuilder.replace(editor.selection, code)
+          })
+        },
+      }
+    }
     return {
       getSelected,
       editorUri: editor.document.uri,
@@ -381,8 +369,8 @@ export async function initializeCtx(
           const fullRange = editor.document.validateRange(
             new vscode.Range(
               new vscode.Position(0, 0),
-              new vscode.Position(Number.MAX_VALUE, Number.MAX_VALUE)
-            )
+              new vscode.Position(Number.MAX_VALUE, Number.MAX_VALUE),
+            ),
           )
 
           editBuilder.replace(fullRange, content)
@@ -413,9 +401,9 @@ export async function initializeCtx(
           editBuilder.replace(
             new vscode.Range(
               editor.document.positionAt(range.start),
-              editor.document.positionAt(range.end)
+              editor.document.positionAt(range.end),
             ),
-            content
+            content,
           )
         })
       },
@@ -436,6 +424,31 @@ export async function initializeCtx(
     disposeCommandPaletteOptions?.()
   })
 
+  function createTempFile(initialContent: string = '') {
+    const uri = vscode.Uri.parse(`refactoolsfs:/temp-file-${Math.random()}`)
+
+    memFs.writeFile(uri, Buffer.from(initialContent), {
+      create: true,
+      overwrite: true,
+    })
+
+    return {
+      uri,
+      dispose() {
+        memFs.delete(uri)
+      },
+      update(content: string) {
+        memFs.writeFile(uri, Buffer.from(content), {
+          create: true,
+          overwrite: true,
+        })
+      },
+      async getContent() {
+        return memFs.readFile(uri).toString()
+      },
+    }
+  }
+
   refactorCtx = {
     onCancel(fn) {
       refactoringEvents.on('cancel', fn)
@@ -454,7 +467,7 @@ export async function initializeCtx(
             value: value,
             picked: value === defaultValue,
           })),
-          { title }
+          { title },
         )
 
         return selected?.value || false
@@ -468,7 +481,7 @@ export async function initializeCtx(
             value: value,
             picked: defaultValue?.includes(value) ?? false,
           })),
-          { title, canPickMany: true }
+          { title, canPickMany: true },
         )
 
         return selected?.map((s) => s.value) || false
@@ -476,17 +489,14 @@ export async function initializeCtx(
       async waitTextSelection(message, buttonLabel) {
         throwIfCancelled()
 
-        const selected = await vscode.window.showInformationMessage(
-          message,
-          buttonLabel
-        )
+        const selected = await vscode.window.showInformationMessage(message, buttonLabel)
 
         if (!selected) {
           return false
         }
 
         const selectedText = await getEditorMethods(
-          vscode.window.activeTextEditor!
+          vscode.window.activeTextEditor!,
         ).getSelected()
 
         if (!selectedText) {
@@ -500,7 +510,7 @@ export async function initializeCtx(
 
         const selected = await vscode.window.showInformationMessage(
           message,
-          ...(options?.buttons ?? [])
+          ...(options?.buttons ?? []),
         )
 
         if (!selected) {
@@ -555,7 +565,7 @@ export async function initializeCtx(
             ]).finally(() => {
               resolveCancel?.()
             })
-          }
+          },
         )
       },
       showInfoMessage: (message: string) => {
@@ -585,7 +595,7 @@ export async function initializeCtx(
         if (isCancelled) return null
 
         const editor = vscode.window.visibleTextEditors.find(
-          (editor) => editor.document.uri.fsPath === filePath
+          (editor) => editor.document.uri.fsPath === filePath,
         )
 
         return editor ? getEditorMethods(editor) : null
@@ -609,7 +619,7 @@ export async function initializeCtx(
         vscode.commands.executeCommand(
           'setContext',
           'refactools.refactoringOptionsAvailable',
-          true
+          true,
         )
 
         const disposable = vscode.commands.registerCommand(
@@ -621,13 +631,13 @@ export async function initializeCtx(
                 description,
                 value,
               })),
-              { title: 'Select option' }
+              { title: 'Select option' },
             )
 
             if (selected) {
               onSelected(selected.value)
             }
-          }
+          },
         )
 
         disposeCommandPaletteOptions = () => {
@@ -635,13 +645,14 @@ export async function initializeCtx(
           vscode.commands.executeCommand(
             'setContext',
             'refactools.refactoringOptionsAvailable',
-            false
+            false,
           )
         }
       },
     },
     fs: {
       memFs,
+      createTempFile,
       createMemFsPath(path) {
         throwIfCancelled()
 
@@ -676,7 +687,7 @@ export async function initializeCtx(
 
         const fileExists = await vscode.workspace.fs.stat(uri).then(
           () => true,
-          () => false
+          () => false,
         )
 
         if (fileExists) {
@@ -704,7 +715,7 @@ export async function initializeCtx(
 
         return vscode.workspace.fs.stat(vscode.Uri.file(filePath)).then(
           () => true,
-          () => false
+          () => false,
         )
       },
       moveFile(filePath, newFilePath) {
@@ -712,7 +723,7 @@ export async function initializeCtx(
 
         return vscode.workspace.fs.rename(
           vscode.Uri.file(filePath),
-          vscode.Uri.file(newFilePath)
+          vscode.Uri.file(newFilePath),
         )
       },
       renameFile(filePath, newFilePath) {
@@ -720,7 +731,7 @@ export async function initializeCtx(
 
         return vscode.workspace.fs.rename(
           vscode.Uri.file(filePath),
-          vscode.Uri.file(newFilePath)
+          vscode.Uri.file(newFilePath),
         )
       },
       moveFolder(dirPath, newDirPath) {
@@ -728,7 +739,7 @@ export async function initializeCtx(
 
         return vscode.workspace.fs.rename(
           vscode.Uri.file(dirPath),
-          vscode.Uri.file(newDirPath)
+          vscode.Uri.file(newDirPath),
         )
       },
       deleteFolder(dirPath) {
@@ -741,7 +752,7 @@ export async function initializeCtx(
 
         return vscode.workspace.fs.rename(
           vscode.Uri.file(dirPath),
-          vscode.Uri.file(newDirPath)
+          vscode.Uri.file(newDirPath),
         )
       },
       async readDirectory(dirPath, options) {
@@ -765,9 +776,9 @@ export async function initializeCtx(
         for (const [name, type] of files) {
           if (type === vscode.FileType.File) {
             if (
-              !filesFilter
-                ? true
-                : filesFilter.some((pattern) => minimatch(name, pattern))
+              !filesFilter ? true : (
+                filesFilter.some((pattern) => minimatch(name, pattern))
+              )
             ) {
               includedFiles.push({
                 path: posix.join(dirPath, name),
@@ -778,10 +789,10 @@ export async function initializeCtx(
             }
           } else {
             if (
-              !includeFolders
-                ? false
-                : includeFolders === true ||
-                  includeFolders.some((pattern) => minimatch(name, pattern))
+              !includeFolders ? false : (
+                includeFolders === true ||
+                includeFolders.some((pattern) => minimatch(name, pattern))
+              )
             ) {
               includedFiles.push({
                 path: posix.join(dirPath, name),
@@ -794,7 +805,7 @@ export async function initializeCtx(
             if (options?.recursive) {
               const subDirFiles = await this.readDirectory(
                 posix.join(dirPath, name),
-                options
+                options,
               )
 
               includedFiles.push(...subDirFiles)

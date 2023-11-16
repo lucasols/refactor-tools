@@ -5,8 +5,11 @@
   "description": "",
   "main": "./dist/main.js",
   "scripts": {
-    "compile": "tsc -p ./tsconfig.prod.json",
-    "watch": "tsc -watch -p ./tsconfig.prod.json"
+    "lint": "pnpm tsc && pnpm eslint",
+    "tsc": "tsc -p tsconfig.prod.json",
+    "build": " pnpm lint && pnpm build:no-test",
+    "build:no-test": "tsup --minify --dts && vsc package",
+    "dev": "tsup --watch --dts"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +17,11 @@
   "devDependencies": {
     "@types/node": "^20.9.0",
     "@types/vscode": "^1.83.0",
+    "@typescript-eslint/eslint-plugin": "^5.61.0",
+    "@typescript-eslint/parser": "^5.61.0",
+    "eslint": "^8.44.0",
+    "prettier": "^3.1.0",
+    "tsup": "^7.2.0",
     "typescript": "^5.2.2"
   },
   "engines": {

@@ -23,8 +23,9 @@ function getActiveWorkspaceFolder() {
 
   const activeEditor = vscode.window.activeTextEditor
 
-  const activeWorkspaceFolder = activeEditor
-    ? vscode.workspace.getWorkspaceFolder(activeEditor.document.uri) ??
+  const activeWorkspaceFolder =
+    activeEditor ?
+      vscode.workspace.getWorkspaceFolder(activeEditor.document.uri) ??
       vscode.workspace.workspaceFolders[0]
     : vscode.workspace.workspaceFolders[0]
 
@@ -36,9 +37,8 @@ function getActiveWorkspaceFolder() {
 }
 
 function createOrUpdateApiDefinition() {
-  const extensionFolder = vscode.extensions.getExtension(
-    'lucasols.refactools'
-  )?.extensionPath
+  const extensionFolder =
+    vscode.extensions.getExtension('lucasols.refactools')?.extensionPath
 
   const activeWorkspaceFolder = getActiveWorkspaceFolder()
 
@@ -47,27 +47,22 @@ function createOrUpdateApiDefinition() {
   })
 
   if (!scriptsFolderUri) {
-    throw new Error(
-      `No scripts folder found. Please create a folder at ${scriptsFolder}`
-    )
+    throw new Error(`No scripts folder found. Please create a folder at ${scriptsFolder}`)
   }
 
-  const apiDefinitionPath = posix.join(
-    scriptsFolderUri.path,
-    'refactools-api.d.ts'
-  )
+  const apiDefinitionPath = posix.join(scriptsFolderUri.path, 'refactools-api.d.ts')
 
   const importPath = posix.join(extensionFolder!, 'dist/refactool')
   const apiDefinitionContent = dedent`
     declare const refacTools: typeof import('${importPath}').refacTools
 
     declare type RefacToolsCtx =
-      import('import('${importPath}')').RefacToolsCtx
+      import('${importPath}').RefacToolsCtx
   `
 
   vscode.workspace.fs.writeFile(
     scriptsFolderUri.with({ path: apiDefinitionPath }),
-    Buffer.from(apiDefinitionContent)
+    Buffer.from(apiDefinitionContent),
   )
 }
 
@@ -79,9 +74,7 @@ async function getRefactoringsList() {
   })
 
   if (!scriptsFolderUri) {
-    throw new Error(
-      `No scripts folder found. Please create a folder at ${scriptsFolder}`
-    )
+    throw new Error(`No scripts folder found. Please create a folder at ${scriptsFolder}`)
   }
 
   const availableRefactorings: {
@@ -103,7 +96,7 @@ async function getRefactoringsList() {
   let hasTypesFile = false
 
   for (const [filename, type] of await vscode.workspace.fs.readDirectory(
-    scriptsFolderUri
+    scriptsFolderUri,
   )) {
     if (type === vscode.FileType.File) {
       const filePath = posix.join(scriptsFolderUri.path, filename)
@@ -120,7 +113,7 @@ async function getRefactoringsList() {
       }
 
       const fileContent = await vscode.workspace.fs.readFile(
-        scriptsFolderUri.with({ path: filePath })
+        scriptsFolderUri.with({ path: filePath }),
       )
 
       const fileContentString = fileContent.toString()
@@ -129,7 +122,7 @@ async function getRefactoringsList() {
 
       if (!configCode) {
         vscode.window.showErrorMessage(
-          `Error parsing config for file ${filename}. Please check the console for more details`
+          `Error parsing config for file ${filename}. Please check the console for more details`,
         )
 
         continue
@@ -149,7 +142,7 @@ async function getRefactoringsList() {
 
   try {
     const config = vm.runInNewContext(
-      `[${availableRefactorings.map(({ configCode }) => configCode).join(',')}]`
+      `[${availableRefactorings.map(({ configCode }) => configCode).join(',')}]`,
     ) as RefactorConfig[]
 
     for (const [index, cfg] of config.entries()) {
@@ -175,8 +168,7 @@ async function getRefactoringsList() {
         if (enableCondition.activeLanguageIs) {
           if (
             !enableCondition.activeLanguageIs.some(
-              (langId) =>
-                vscode.window.activeTextEditor?.document.languageId === langId
+              (langId) => vscode.window.activeTextEditor?.document.languageId === langId,
             )
           ) {
             continue
@@ -207,7 +199,7 @@ async function getRefactoringsList() {
   } catch (e) {
     console.error(e)
     vscode.window.showErrorMessage(
-      `Error parsing config. You config should not have referenced variables or typescript code, Please check the console for more details`
+      `Error parsing config. You config should not have referenced variables or typescript code, Please check the console for more details`,
     )
   }
 
@@ -215,7 +207,7 @@ async function getRefactoringsList() {
     (item): vscode.QuickPickItem & AvailableRefactoringsConfig => ({
       description: item.config.description,
       ...item,
-    })
+    }),
   )
 }
 
@@ -225,7 +217,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerFileSystemProvider('refactoolsfs', memFs, {
       isCaseSensitive: true,
-    })
+    }),
   )
 
   context.subscriptions.push(
@@ -236,7 +228,7 @@ export function activate(context: vscode.ExtensionContext) {
           title: 'Available refactorings',
           matchOnDescription: true,
           placeHolder: 'Select a refactoring',
-        }
+        },
       )
 
       if (!selectedRefactoring) return
@@ -258,7 +250,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (!bundledScriptContent.includes('refacTools.config')) {
           throw new Error(
-            `Error bundling script. Please check the console for more details`
+            `Error bundling script. Please check the console for more details`,
           )
         }
 
@@ -294,18 +286,15 @@ export function activate(context: vscode.ExtensionContext) {
               refactoringEvents,
               selectedRefactoring.variant,
               getActiveWorkspaceFolder(),
-              progress
+              progress,
             )
 
             console.log(`Refactoring "${selectedRefactoring.filename}" started`)
 
             const action = async () => {
-              const results: RunResult = await vm.runInNewContext(
-                bundledScriptContent,
-                {
-                  refacTools: refacTools,
-                }
-              )
+              const results: RunResult = await vm.runInNewContext(bundledScriptContent, {
+                refacTools: refacTools,
+              })
 
               console.log(`Refactoring "${selectedRefactoring.filename}" ended`)
             }
@@ -328,23 +317,20 @@ export function activate(context: vscode.ExtensionContext) {
               resolveCancel?.()
               cleanup()
             })
-          }
+          },
         )
       } catch (e) {
         console.error(e)
         vscode.window.showErrorMessage(
-          `Error running refactoring. Please check the console for more details`
+          `Error running refactoring. Please check the console for more details`,
         )
       }
-    })
+    }),
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'refactools.updateWorkspaceApiTypes',
-      async () => {
-        createOrUpdateApiDefinition()
-      }
-    )
+    vscode.commands.registerCommand('refactools.updateWorkspaceApiTypes', async () => {
+      createOrUpdateApiDefinition()
+    }),
   )
 }
