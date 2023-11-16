@@ -101,6 +101,7 @@ export type RefacToolsCtx = {
       dispose: () => void
       update: (content: string) => void
       getContent: () => Promise<string>
+      openEditor: () => Promise<EditorMethods>
     }
     createMemFsPath: (path: string) => void
     getWorkspacePath: () => string
@@ -424,7 +425,9 @@ export async function initializeCtx(
     disposeCommandPaletteOptions?.()
   })
 
-  function createTempFile(initialContent: string = '') {
+  const createTempFile: RefacToolsCtx['fs']['createTempFile'] = (
+    initialContent: string = '',
+  ) => {
     const uri = vscode.Uri.parse(`refactoolsfs:/temp-file-${Math.random()}`)
 
     memFs.writeFile(uri, Buffer.from(initialContent), {
@@ -445,6 +448,13 @@ export async function initializeCtx(
       },
       async getContent() {
         return memFs.readFile(uri).toString()
+      },
+      async openEditor() {
+        const editor = await vscode.workspace.openTextDocument(uri)
+
+        await vscode.window.showTextDocument(editor)
+
+        return getEditorMethods(vscode.window.activeTextEditor!)
       },
     }
   }
