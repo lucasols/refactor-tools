@@ -8,7 +8,7 @@
     "lint": "pnpm tsc && pnpm eslint",
     "tsc": "tsc -p tsconfig.prod.json",
     "build": " pnpm lint && pnpm build:no-test",
-    "build:no-test": "tsup --minify --dts && vsc package",
+    "build:no-test": "tsup --minify --dts && vsce package",
     "dev": "tsup --watch --dts"
   },
   "keywords": [],
