@@ -222,6 +222,8 @@ async function getRefactoringsList() {
 export function activate(context: vscode.ExtensionContext) {
   const memFs = new MemFS()
 
+  const outputChannel = vscode.window.createOutputChannel('RefacTools')
+
   context.subscriptions.push(
     vscode.workspace.registerFileSystemProvider('refactoolsfs', memFs, {
       isCaseSensitive: true,
@@ -283,7 +285,7 @@ export function activate(context: vscode.ExtensionContext) {
             token.onCancellationRequested(() => {
               refactoringEvents.emit('cancel')
 
-              console.log('User canceled the long running operation')
+              outputChannel.appendLine('User canceled the long running operation')
 
               cleanup()
             })
@@ -297,14 +299,29 @@ export function activate(context: vscode.ExtensionContext) {
               progress,
             )
 
-            console.log(`Refactoring "${selectedRefactoring.filename}" started`)
+            outputChannel.appendLine(
+              `Refactoring "${selectedRefactoring.filename}" started`,
+            )
 
             const action = async () => {
-              const results: RunResult = await vm.runInNewContext(bundledScriptContent, {
-                refacTools: refacTools,
-              })
+              try {
+                const results: RunResult = await vm.runInNewContext(
+                  bundledScriptContent,
+                  {
+                    refacTools: refacTools,
+                  },
+                )
+              } catch (e) {
+                const errorMsg = getErrorMessage(e)
+                outputChannel.appendLine(`Error running the refactoring: ${errorMsg}`)
+                vscode.window.showErrorMessage(
+                  `Error running refactoring. Please check the console for more details`,
+                )
+              }
 
-              console.log(`Refactoring "${selectedRefactoring.filename}" ended`)
+              outputChannel.appendLine(
+                `Refactoring "${selectedRefactoring.filename}" ended`,
+              )
             }
 
             let resolveCancel: () => void
@@ -328,7 +345,9 @@ export function activate(context: vscode.ExtensionContext) {
           },
         )
       } catch (e) {
-        console.error(e)
+        const errorMsg = getErrorMessage(e)
+        outputChannel.appendLine(`Error: ${errorMsg}`)
+        outputChannel.append(e as any)
         vscode.window.showErrorMessage(
           `Error running refactoring. Please check the console for more details`,
         )
@@ -340,5 +359,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('refactools.updateWorkspaceApiTypes', async () => {
       createOrUpdateApiDefinition()
     }),
+  )
+}
+
+function getErrorMessage(e: unknown): string {
+  return (
+    typeof e === 'string' ? e
+    : typeof e === 'object' && e && 'message' in e ? String(e?.message)
+    : ''
   )
 }
