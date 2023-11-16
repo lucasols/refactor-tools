@@ -21,5 +21,5 @@ refacTools.runRefactor(async (ctx) => {
       : 'Translate from English to Portuguese',
   })
 
-  await ctx.fs.createTempFile('txt', translatedText).openEditor()
+  await ctx.fs.createTempFile('txt', translatedText).openEditor('right')
 })

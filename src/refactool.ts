@@ -34,25 +34,29 @@ type RefactorFn = (ctx: RefacToolsCtx) => Promise<void> | void
 export type RunResult = {}
 
 type EditorMethods = {
-  getSelected: () => Thenable<Selected | null>
-  getCursorPos: () => Thenable<number>
-  format: () => Thenable<void>
-  setContent: (content: string) => Thenable<void>
+  getSelected: () => Promise<Selected | null>
+  getCursorPos: () => Promise<number>
+  format: () => Promise<void>
+  setContent: (content: string) => Promise<void>
+  save: () => Promise<void>
   replaceContent: (
     content: string,
     range: { start: number; end: number },
-  ) => Thenable<void>
+  ) => Promise<void>
   insertContent: (content: string, position: number) => Thenable<void>
   focus: () => Thenable<void>
   filename: string
   filepath: string
   editorUri: vsc.Uri
+  getLanguage: () => LanguageId
+  getExtension: () => string
   getContent: () => string
 }
 
 type Selected = {
-  replaceWith: (code: string) => void
+  replaceWith: (code: string) => Promise<void>
   text: string
+  language: LanguageId
   range: {
     start: number
     end: number
@@ -71,9 +75,13 @@ export type RefacToolsCtx = {
       content: string
       language?: string
       filename?: string
+      editorGroup?: 'right' | 'current'
     }) => void
     getEditor: (filePath: string) => EditorMethods | null
-    openFile: (filePath: string) => Promise<EditorMethods | null>
+    openFile: (
+      filePath: string,
+      editorGroup?: 'right' | 'current',
+    ) => Promise<EditorMethods | null>
     setGeneralProgress: (progress: {
       message?: string | undefined
       increment?: number | undefined
@@ -104,7 +112,7 @@ export type RefacToolsCtx = {
       dispose: () => void
       update: (content: string) => void
       getContent: () => Promise<string>
-      openEditor: () => Promise<EditorMethods>
+      openEditor: (editorGroup?: 'right' | 'current') => Promise<EditorMethods>
     }
     createMemFsPath: (path: string) => void
     getWorkspacePath: () => string
@@ -342,13 +350,14 @@ export async function initializeCtx(
 
       return {
         text: text,
+        language: editor.document.languageId as LanguageId,
         range: {
           start: editor.document.offsetAt(editor.selection.start),
           end: editor.document.offsetAt(editor.selection.end),
         },
         editorUri: editor.document.uri,
-        replaceWith: (code: string) => {
-          editor.edit((editBuilder) => {
+        replaceWith: async (code: string) => {
+          await editor.edit((editBuilder) => {
             editBuilder.replace(editor.selection, code)
           })
         },
@@ -356,6 +365,23 @@ export async function initializeCtx(
     }
     return {
       getSelected,
+      getLanguage: () => {
+        if (isCancelled) return ''
+
+        return editor.document.languageId as LanguageId
+      },
+      getExtension: () => {
+        if (isCancelled) return ''
+
+        return editor.document.fileName.split('.').pop() ?? ''
+      },
+      save: async () => {
+        if (isCancelled) return
+
+        await focusEditor(editor)
+
+        await editor.document.save()
+      },
       editorUri: editor.document.uri,
       async getCursorPos() {
         if (isCancelled) return 0
@@ -433,7 +459,7 @@ export async function initializeCtx(
     initialContent: string = '',
   ) => {
     const uri = vscode.Uri.parse(
-      `refactoolsfs:/temp-file-${Math.random()}${
+      `refactoolsfs:/temp-file-${Date.now()}${
         extension.startsWith('.') ? '' : '.'
       }${extension}`,
     )
@@ -457,10 +483,13 @@ export async function initializeCtx(
       async getContent() {
         return memFs.readFile(uri).toString()
       },
-      async openEditor() {
+      async openEditor(editorGroup: 'right' | 'current' = 'current') {
         const editor = await vscode.workspace.openTextDocument(uri)
 
-        await vscode.window.showTextDocument(editor)
+        await vscode.window.showTextDocument(
+          editor,
+          editorGroup === 'current' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
+        )
 
         return getEditorMethods(vscode.window.activeTextEditor!)
       },
@@ -601,13 +630,16 @@ export async function initializeCtx(
 
         vscode.window.showWarningMessage(message)
       },
-      newUnsavedFile: async ({ content, language }) => {
+      newUnsavedFile: async ({ content, language, editorGroup }) => {
         const editor = await vscode.workspace.openTextDocument({
           language,
           content,
         })
 
-        await vscode.window.showTextDocument(editor)
+        await vscode.window.showTextDocument(
+          editor,
+          editorGroup === 'current' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
+        )
       },
       getEditor: (filePath) => {
         if (isCancelled) return null
@@ -618,14 +650,17 @@ export async function initializeCtx(
 
         return editor ? getEditorMethods(editor) : null
       },
-      async openFile(filePath) {
+      async openFile(filePath, editorGroup: 'right' | 'current' = 'current') {
         if (isCancelled) {
           return null
         }
 
         const editor = await vscode.workspace.openTextDocument(filePath)
 
-        await vscode.window.showTextDocument(editor)
+        await vscode.window.showTextDocument(
+          editor,
+          editorGroup === 'current' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
+        )
 
         return getEditorMethods(vscode.window.activeTextEditor!)
       },

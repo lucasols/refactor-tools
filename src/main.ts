@@ -250,6 +250,7 @@ export function activate(context: vscode.ExtensionContext) {
           format: 'cjs',
           absWorkingDir: selectedRefactoring.rootDir,
           write: false,
+          platform: 'node',
         })
 
         const bundledScriptContent = bundledScript.outputFiles[0]?.text
@@ -309,13 +310,29 @@ export function activate(context: vscode.ExtensionContext) {
                   bundledScriptContent,
                   {
                     refacTools: refacTools,
+                    require,
+                    global,
+                    process,
+                    URL,
+                    setTimeout,
+                    clearTimeout,
+                    setInterval,
+                    fetch,
+                    clearInterval,
+                    Buffer,
                   },
                 )
               } catch (e) {
                 const errorMsg = getErrorMessage(e)
-                outputChannel.appendLine(`Error running the refactoring: ${errorMsg}`)
+                outputChannel.appendLine(`Error running the refactoring:`)
+                outputChannel.appendLine(errorMsg)
+
+                if (e && typeof e === 'object' && 'stack' in e) {
+                  outputChannel.appendLine(String(e.stack))
+                }
+
                 vscode.window.showErrorMessage(
-                  `Error running refactoring. Please check the console for more details`,
+                  `Error running refactoring. Please check the output for more details`,
                 )
               }
 
@@ -349,7 +366,7 @@ export function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Error: ${errorMsg}`)
         outputChannel.append(e as any)
         vscode.window.showErrorMessage(
-          `Error running refactoring. Please check the console for more details`,
+          `Error running refactoring. Please check the output for more details`,
         )
       }
     }),
