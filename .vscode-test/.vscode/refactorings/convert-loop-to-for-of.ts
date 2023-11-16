@@ -20,10 +20,7 @@ refacTools.runRefactor(async (ctx) => {
     throw new Error('No code selected')
   }
 
-  const refactoredCode = await mockGpt4({
-    prompt: `Convert loop to for of`,
-    code: selectedCode.text,
-  })
+  const refactoredCode = 'new code'
 
   if (rc_parse('ok', rc_string)) {
     ctx.ide.showInfoMessage('Imported libs works! :)')
@@ -38,7 +35,7 @@ refacTools.runRefactor(async (ctx) => {
 
     if (!acceptedRefactoring) return
 
-    await ctx.activeEditor.setContent(refactoredCode)
+    await ctx.activeEditor.setContent(acceptedRefactoring)
     await ctx.activeEditor.format()
 
     return

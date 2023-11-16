@@ -4,6 +4,7 @@ import { evtmitter } from 'evtmitter'
 import * as vm from 'vm'
 import * as vscode from 'vscode'
 import {
+  HistoryEntry,
   RefactorConfig,
   RefactoringEvents,
   RunResult,
@@ -230,6 +231,14 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   )
 
+  const commandsHistory = new Map<string, HistoryEntry>()
+
+  context.subscriptions.push({
+    dispose: () => {
+      commandsHistory.clear()
+    },
+  })
+
   context.subscriptions.push(
     vscode.commands.registerCommand('refactools.listRefactorings', async () => {
       const selectedRefactoring = await vscode.window.showQuickPick(
@@ -291,6 +300,28 @@ export function activate(context: vscode.ExtensionContext) {
               cleanup()
             })
 
+            const runsValues = {} as Record<string, unknown>
+
+            const setHistoryValue: (key: string, value: any) => void = (key, value) => {
+              runsValues[key] = value
+            }
+
+            const getHistory = () => {
+              if (!commandsHistory.has(selectedRefactoring.filename)) {
+                commandsHistory.set(selectedRefactoring.filename, { runs: [] })
+              }
+
+              return commandsHistory.get(selectedRefactoring.filename)!
+            }
+
+            const log = (value: unknown) => {
+              if (typeof value === 'string') {
+                outputChannel.appendLine(value)
+              } else {
+                outputChannel.appendLine(JSON.stringify(value, null, 2))
+              }
+            }
+
             initializeCtx(
               vscode,
               memFs,
@@ -298,6 +329,9 @@ export function activate(context: vscode.ExtensionContext) {
               selectedRefactoring.variant,
               getActiveWorkspaceFolder(),
               progress,
+              setHistoryValue,
+              getHistory,
+              log,
             )
 
             outputChannel.appendLine(
@@ -306,22 +340,24 @@ export function activate(context: vscode.ExtensionContext) {
 
             const action = async () => {
               try {
-                const results: RunResult = await vm.runInNewContext(
-                  bundledScriptContent,
-                  {
-                    refacTools: refacTools,
-                    require,
-                    global,
-                    process,
-                    URL,
-                    setTimeout,
-                    clearTimeout,
-                    setInterval,
-                    fetch,
-                    clearInterval,
-                    Buffer,
-                  },
-                )
+                await vm.runInNewContext(bundledScriptContent, {
+                  refacTools: refacTools,
+                  require,
+                  global,
+                  process,
+                  URL,
+                  setTimeout,
+                  clearTimeout,
+                  setInterval,
+                  fetch,
+                  clearInterval,
+                  Buffer,
+                })
+
+                commandsHistory.get(selectedRefactoring.filename)!.runs.push({
+                  variant: selectedRefactoring.variant,
+                  values: runsValues,
+                })
               } catch (e) {
                 const errorMsg = getErrorMessage(e)
                 outputChannel.appendLine(`Error running the refactoring:`)

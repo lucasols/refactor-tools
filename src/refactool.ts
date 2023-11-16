@@ -50,7 +50,7 @@ type EditorMethods = {
   editorUri: vsc.Uri
   getLanguage: () => LanguageId
   getExtension: () => string
-  getContent: () => string
+  getContent: () => Thenable<string>
 }
 
 type Selected = {
@@ -67,6 +67,15 @@ type Selected = {
 export type RefacToolsCtx = {
   variant: string | null
   runResult: RunResult
+  history: {
+    getLast: () => {
+      get: <T>(key: string) => T | undefined
+      variant: string
+    } | null
+    getAll: () => Record<string, unknown>[]
+    add: (key: string, value: any) => void
+  }
+  log: (value: any) => void
   ide: {
     showInfoMessage: (message: string) => void
     showErrorMessage: (message: string) => void
@@ -182,6 +191,10 @@ export type RefactoringEvents = {
   cancelParent: undefined
 }
 
+export type HistoryEntry = {
+  runs: { values: Record<string, unknown>; variant: string }[]
+}
+
 /** @internal */
 export async function initializeCtx(
   vscode: typeof vsc,
@@ -190,6 +203,9 @@ export async function initializeCtx(
   variant: string | null,
   activeWorkspaceFolder: vsc.WorkspaceFolder,
   setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>,
+  addValueToHistory: (key: string, value: any) => void,
+  getHistory: () => HistoryEntry,
+  log: (value: any) => void,
 ) {
   let isCancelled = false
 
@@ -332,9 +348,27 @@ export async function initializeCtx(
     return input || false
   }
 
-  function getEditorMethods(editor: vsc.TextEditor): EditorMethods {
+  function getEditorMethods(_editor: vsc.TextEditor): EditorMethods {
+    const editorUri = _editor.document.uri
+
+    const getEditor = async () => {
+      const editor = vscode.window.visibleTextEditors.find(
+        (editor) => editor.document.uri.toString() === editorUri.toString(),
+      )
+
+      if (!editor) {
+        return await vscode.window.showTextDocument(
+          await vscode.workspace.openTextDocument(editorUri),
+        )
+      }
+
+      return editor
+    }
+
     const getSelected: RefacToolsCtx['activeEditor']['getSelected'] = async () => {
       if (isCancelled) return null
+
+      const editor = await getEditor()
 
       await focusEditor(editor)
 
@@ -357,6 +391,8 @@ export async function initializeCtx(
         },
         editorUri: editor.document.uri,
         replaceWith: async (code: string) => {
+          const editor = await getEditor()
+
           await editor.edit((editBuilder) => {
             editBuilder.replace(editor.selection, code)
           })
@@ -368,32 +404,32 @@ export async function initializeCtx(
       getLanguage: () => {
         if (isCancelled) return ''
 
-        return editor.document.languageId as LanguageId
+        return _editor.document.languageId as LanguageId
       },
       getExtension: () => {
         if (isCancelled) return ''
 
-        return editor.document.fileName.split('.').pop() ?? ''
+        return _editor.document.fileName.split('.').pop() ?? ''
       },
       save: async () => {
         if (isCancelled) return
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
         await editor.document.save()
       },
-      editorUri: editor.document.uri,
+      editorUri: _editor.document.uri,
       async getCursorPos() {
         if (isCancelled) return 0
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
         return editor.document.offsetAt(editor.selection.active)
       },
       async setContent(content) {
         if (isCancelled) return
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
         editor?.edit((editBuilder) => {
           const fullRange = editor.document.validateRange(
@@ -409,23 +445,23 @@ export async function initializeCtx(
       format: async () => {
         if (isCancelled) return
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
         vscode.commands.executeCommand('editor.action.formatDocument')
       },
       async insertContent(content, position) {
         if (isCancelled) return
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
-        editor?.edit((editBuilder) => {
+        editor.edit((editBuilder) => {
           editBuilder.insert(editor.document.positionAt(position), content)
         })
       },
       async replaceContent(content, range) {
         if (isCancelled) return
 
-        await focusEditor(editor)
+        const editor = await getEditor()
 
         editor?.edit((editBuilder) => {
           editBuilder.replace(
@@ -437,11 +473,17 @@ export async function initializeCtx(
           )
         })
       },
-      filename: editor.document.fileName,
-      filepath: editor.document.uri.fsPath,
-      getContent: () => editor.document.getText(),
+      filename: _editor.document.fileName,
+      filepath: _editor.document.uri.fsPath,
+      getContent: async () => {
+        const editor = await getEditor()
+
+        return editor.document.getText()
+      },
       focus: async () => {
         if (isCancelled) return
+
+        const editor = await getEditor()
 
         await focusEditor(editor)
       },
@@ -502,6 +544,29 @@ export async function initializeCtx(
     },
     forceCancel() {
       refactoringEvents.emit('cancelParent')
+    },
+    log,
+    history: {
+      add(key, value) {
+        addValueToHistory(key, value)
+      },
+      getLast() {
+        let lastHistoryEntry = getHistory().runs.at(-1)
+
+        if (!lastHistoryEntry) {
+          return null
+        }
+
+        return {
+          get(key) {
+            return lastHistoryEntry!.values[key] as any
+          },
+          variant: lastHistoryEntry.variant,
+        }
+      },
+      getAll() {
+        return getHistory().runs.map((run) => run.values)
+      },
     },
     prompt: {
       text: promptText,
