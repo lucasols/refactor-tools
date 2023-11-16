@@ -96,7 +96,10 @@ export type RefacToolsCtx = {
   }
   fs: {
     memFs: MemFS
-    createTempFile: (initialContent?: string) => {
+    createTempFile: (
+      extension: string,
+      initialContent?: string,
+    ) => {
       uri: vsc.Uri
       dispose: () => void
       update: (content: string) => void
@@ -426,9 +429,14 @@ export async function initializeCtx(
   })
 
   const createTempFile: RefacToolsCtx['fs']['createTempFile'] = (
+    extension: string,
     initialContent: string = '',
   ) => {
-    const uri = vscode.Uri.parse(`refactoolsfs:/temp-file-${Math.random()}`)
+    const uri = vscode.Uri.parse(
+      `refactoolsfs:/temp-file-${Math.random()}${
+        extension.startsWith('.') ? '' : '.'
+      }${extension}`,
+    )
 
     memFs.writeFile(uri, Buffer.from(initialContent), {
       create: true,
