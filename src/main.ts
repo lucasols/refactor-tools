@@ -306,11 +306,11 @@ export function activate(context: vscode.ExtensionContext) {
               runsValues[key] = value
             }
 
-            const getHistory = () => {
-              if (!commandsHistory.has(selectedRefactoring.filename)) {
-                commandsHistory.set(selectedRefactoring.filename, { runs: [] })
-              }
+            if (!commandsHistory.has(selectedRefactoring.filename)) {
+              commandsHistory.set(selectedRefactoring.filename, { runs: [] })
+            }
 
+            const getHistory = () => {
               return commandsHistory.get(selectedRefactoring.filename)!
             }
 
