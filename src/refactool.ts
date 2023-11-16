@@ -17,7 +17,7 @@ export type RefactorConfig = {
     activeFileContains?: string
     activeLanguageIs?: LanguageId[]
   }
-  variants?: {
+  variants?: { default?: string } & {
     [id: string]: string
   }
 }

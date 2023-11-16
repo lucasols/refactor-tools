@@ -88,7 +88,7 @@ async function getRefactoringsList() {
     filename: string
     label: string
     rootDir: string
-    variant: string | null
+    variant: string
   }
 
   const availableRefactoringsConfig: AvailableRefactoringsConfig[] = []
@@ -176,16 +176,24 @@ async function getRefactoringsList() {
         }
       }
 
-      availableRefactoringsConfig.push({
+      const defaultVariant = {
         config: cfg,
         filename: notNullish(availableRefactorings[index]).filename,
         rootDir: notNullish(availableRefactorings[index]).rootDir,
-        variant: null,
         label: cfg.name,
-      })
+        variant: 'default',
+      }
+
+      availableRefactoringsConfig.push(defaultVariant)
 
       if (cfg.variants) {
         for (const [variant, name] of Object.entries(cfg.variants)) {
+          if (variant === 'default') {
+            defaultVariant.label = `${cfg.name} - ${name}`
+
+            continue
+          }
+
           availableRefactoringsConfig.push({
             config: cfg,
             filename: notNullish(availableRefactorings[index]).filename,
