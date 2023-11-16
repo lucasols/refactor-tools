@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "",
   "main": "./dist/main.js",
+  "repository": "lucasols/refactools",
   "scripts": {
     "lint": "pnpm tsc && pnpm eslint",
     "tsc": "tsc -p tsconfig.prod.json",
@@ -23,7 +24,10 @@
     "eslint": "^8.44.0",
     "prettier": "^3.1.0",
     "tsup": "^7.2.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "esbuild": "^0.19.5",
+    "evtmitter": "^0.3.3",
+    "minimatch": "^9.0.3"
   },
   "engines": {
     "vscode": ">=1.83.0",
@@ -68,10 +72,5 @@
         }
       ]
     }
-  },
-  "dependencies": {
-    "esbuild": "^0.19.5",
-    "evtmitter": "^0.3.3",
-    "minimatch": "^9.0.3"
   }
 }
