@@ -50,12 +50,6 @@ function createOrUpdateApiDefinition() {
     path: posix.join(activeWorkspaceFolder.uri.path, scriptsFolder),
   })
 
-  if (!scriptsFolderUri) {
-    return null
-  }
-
-  const apiDefinitionPath = posix.join(scriptsFolderUri.path, 'refactools-api.d.ts')
-
   const importPath = posix.join(extensionFolder!, 'dist/refactool')
   const apiDefinitionContent = dedent`
     declare const refacTools: typeof import('${importPath}').refacTools
@@ -63,22 +57,46 @@ function createOrUpdateApiDefinition() {
     declare type RefacToolsCtx<V extends string> =
       import('${importPath}').RefacToolsCtx<V>
   `
+  if (scriptsFolderUri) {
+    const apiDefinitionPath = posix.join(scriptsFolderUri.path, 'refactools-api.d.ts')
 
-  vscode.workspace.fs.writeFile(
-    scriptsFolderUri.with({ path: apiDefinitionPath }),
-    Buffer.from(apiDefinitionContent),
-  )
+    vscode.workspace.fs.writeFile(
+      scriptsFolderUri.with({ path: apiDefinitionPath }),
+      Buffer.from(apiDefinitionContent),
+    )
+  }
+
+  const userProjectFolder = getUserRefactoringsProjectUri()
+
+  if (userProjectFolder) {
+    const apiDefinitionPath = posix.join(
+      userProjectFolder.path,
+      'refactorings/refactools-api.d.ts',
+    )
+
+    vscode.workspace.fs.writeFile(
+      userProjectFolder.with({ path: apiDefinitionPath }),
+      Buffer.from(apiDefinitionContent),
+    )
+  }
+}
+
+function getUserRefactoringsProjectUri() {
+  const userRefactoringProject = vscode.workspace
+    .getConfiguration('refactools')
+    .get<string | null>('userRefactoringsProject')
+
+  if (!userRefactoringProject) {
+    return null
+  }
+
+  return vscode.Uri.file(posix.join(userRefactoringProject, '/refactorings'))
 }
 
 async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
   const folderToCheck: vscode.Uri[] = []
 
-  const userRefactoringProject = vscode.workspace
-    .getConfiguration('refactools')
-    .get<string | null>('userRefactoringsProject')
-
-  const userProjectFolder =
-    userRefactoringProject && vscode.Uri.file(userRefactoringProject)
+  const userProjectFolder = getUserRefactoringsProjectUri()
 
   if (userProjectFolder) {
     folderToCheck.push(userProjectFolder)
@@ -110,8 +128,6 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
 
   const availableRefactoringsConfig: AvailableRefactoringsConfig[] = []
 
-  let hasTypesFile = false
-
   const addedRefactorings = new Set<string>()
 
   for (const projectFolder of folderToCheck) {
@@ -122,11 +138,6 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
         const filePath = posix.join(projectFolder.path, filename)
 
         const fileExtension = posix.extname(filePath)
-
-        if (filePath.endsWith('refactools-api.d.ts')) {
-          hasTypesFile = true
-          continue
-        }
 
         if (fileExtension !== '.ts') {
           continue
@@ -164,10 +175,6 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
         })
       }
     }
-  }
-
-  if (!hasTypesFile) {
-    createOrUpdateApiDefinition()
   }
 
   try {
