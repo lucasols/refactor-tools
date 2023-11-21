@@ -198,7 +198,7 @@ export async function initializeCtx(
   memFs: MemFS,
   refactoringEvents: Emitter<RefactoringEvents>,
   variant: string | null,
-  activeWorkspaceFolder: vsc.WorkspaceFolder,
+  activeWorkspaceFolder: vsc.WorkspaceFolder | null,
   setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>,
   addValueToHistory: (key: string, value: any) => void,
   getHistory: () => HistoryEntry,
@@ -777,10 +777,18 @@ export async function initializeCtx(
       getWorkspacePath() {
         throwIfCancelled()
 
-        return activeWorkspaceFolder.uri.path
+        if (!activeWorkspaceFolder) {
+          throw new Error('No active workspace folder')
+        }
+
+        return activeWorkspaceFolder?.uri.path
       },
       getPathRelativeToWorkspace(relativePath) {
         throwIfCancelled()
+
+        if (!activeWorkspaceFolder) {
+          throw new Error('No active workspace folder')
+        }
 
         return posix.join(activeWorkspaceFolder.uri.path, relativePath)
       },

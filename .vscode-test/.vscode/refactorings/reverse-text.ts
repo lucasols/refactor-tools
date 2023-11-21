@@ -1,4 +1,4 @@
-import { mockGpt4 } from './utils/foo'
+import { mockGpt4 } from '../../refactorings/utils/foo'
 
 refacTools.config({
   name: 'Reverse text',
@@ -13,13 +13,7 @@ refacTools.runRefactor(async (ctx) => {
 
   if (!textToTranslate) return
 
-  const translatedText = await mockGpt4({
-    input: textToTranslate,
-    prompt:
-      ctx.variant === 'ptEn' ?
-        'Translate from Portuguese to English'
-      : 'Translate from English to Portuguese',
-  })
+  const reversedText = textToTranslate.split('').reverse().join('')
 
-  await ctx.fs.createTempFile('txt', translatedText).openEditor('right')
+  await ctx.fs.createTempFile('txt', reversedText).openEditor('right')
 })

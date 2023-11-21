@@ -18,7 +18,7 @@ const extractConfigRegex = /refacTools\.config\((\{[\s\S]*?\})\)/
 
 function getActiveWorkspaceFolder() {
   if (!vscode.workspace.workspaceFolders?.length) {
-    throw new Error('No workspace folder found')
+    return null
   }
 
   const activeEditor = vscode.window.activeTextEditor
@@ -30,7 +30,7 @@ function getActiveWorkspaceFolder() {
     : vscode.workspace.workspaceFolders[0]
 
   if (!activeWorkspaceFolder) {
-    throw new Error('No workspace folder found')
+    return null
   }
 
   return activeWorkspaceFolder
@@ -42,12 +42,16 @@ function createOrUpdateApiDefinition() {
 
   const activeWorkspaceFolder = getActiveWorkspaceFolder()
 
+  if (!activeWorkspaceFolder) {
+    return null
+  }
+
   const scriptsFolderUri = activeWorkspaceFolder.uri.with({
     path: posix.join(activeWorkspaceFolder.uri.path, scriptsFolder),
   })
 
   if (!scriptsFolderUri) {
-    throw new Error(`No scripts folder found. Please create a folder at ${scriptsFolder}`)
+    return null
   }
 
   const apiDefinitionPath = posix.join(scriptsFolderUri.path, 'refactools-api.d.ts')
@@ -66,15 +70,28 @@ function createOrUpdateApiDefinition() {
   )
 }
 
-async function getRefactoringsList() {
+async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
+  const folderToCheck: vscode.Uri[] = []
+
+  const userRefactoringProject = vscode.workspace
+    .getConfiguration('refactools')
+    .get<string | null>('userRefactoringsProject')
+
+  const userProjectFolder =
+    userRefactoringProject && vscode.Uri.file(userRefactoringProject)
+
+  if (userProjectFolder) {
+    folderToCheck.push(userProjectFolder)
+  }
+
   const activeWorkspaceFolder = getActiveWorkspaceFolder()
 
-  const scriptsFolderUri = activeWorkspaceFolder.uri.with({
+  const scriptsFolderUri = activeWorkspaceFolder?.uri.with({
     path: posix.join(activeWorkspaceFolder.uri.path, scriptsFolder),
   })
 
-  if (!scriptsFolderUri) {
-    throw new Error(`No scripts folder found. Please create a folder at ${scriptsFolder}`)
+  if (scriptsFolderUri) {
+    folderToCheck.push(scriptsFolderUri)
   }
 
   const availableRefactorings: {
@@ -95,44 +112,57 @@ async function getRefactoringsList() {
 
   let hasTypesFile = false
 
-  for (const [filename, type] of await vscode.workspace.fs.readDirectory(
-    scriptsFolderUri,
-  )) {
-    if (type === vscode.FileType.File) {
-      const filePath = posix.join(scriptsFolderUri.path, filename)
+  const addedRefactorings = new Set<string>()
 
-      const fileExtension = posix.extname(filePath)
+  for (const projectFolder of folderToCheck) {
+    for (const [filename, type] of await vscode.workspace.fs.readDirectory(
+      projectFolder,
+    )) {
+      if (type === vscode.FileType.File) {
+        const filePath = posix.join(projectFolder.path, filename)
 
-      if (filePath.endsWith('refactools-api.d.ts')) {
-        hasTypesFile = true
-        continue
-      }
+        const fileExtension = posix.extname(filePath)
 
-      if (fileExtension !== '.ts') {
-        continue
-      }
+        if (filePath.endsWith('refactools-api.d.ts')) {
+          hasTypesFile = true
+          continue
+        }
 
-      const fileContent = await vscode.workspace.fs.readFile(
-        scriptsFolderUri.with({ path: filePath }),
-      )
+        if (fileExtension !== '.ts') {
+          continue
+        }
 
-      const fileContentString = fileContent.toString()
-
-      const configCode = extractConfigRegex.exec(fileContentString)?.[1]
-
-      if (!configCode) {
-        vscode.window.showErrorMessage(
-          `Error parsing config for file ${filename}. Please check the console for more details`,
+        const fileContent = await vscode.workspace.fs.readFile(
+          projectFolder.with({ path: filePath }),
         )
 
-        continue
-      }
+        const fileContentString = fileContent.toString()
 
-      availableRefactorings.push({
-        configCode,
-        filename,
-        rootDir: scriptsFolderUri.path,
-      })
+        const configCode = extractConfigRegex.exec(fileContentString)?.[1]
+
+        if (!configCode) {
+          vscode.window.showErrorMessage(
+            `Error parsing config for file ${filename}. Please check the console for more details`,
+          )
+
+          continue
+        }
+
+        if (addedRefactorings.has(filename)) {
+          outputChannel.appendLine(
+            `Refactoring "${filename}" was ignored because it was already added`,
+          )
+          continue
+        }
+
+        addedRefactorings.add(filename)
+
+        availableRefactorings.push({
+          configCode,
+          filename,
+          rootDir: projectFolder.path,
+        })
+      }
     }
   }
 
@@ -241,7 +271,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('refactools.listRefactorings', async () => {
       const selectedRefactoring = await vscode.window.showQuickPick(
-        getRefactoringsList(),
+        getRefactoringsList(outputChannel),
         {
           title: 'Available refactorings',
           matchOnDescription: true,
