@@ -2,7 +2,11 @@ import OpenAI from 'openai'
 import { dedent } from '../../../utils-lib/dedent'
 import { joinStrings } from '@utils/stringUtils'
 
-const API_KEY = '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'
+const API_KEY = process.env.OPENAI_API_KEY
+
+if (!API_KEY) {
+  throw new Error('No OPENAI_API_KEY env variable set')
+}
 
 const extractCodeRegex = /```([a-z]*)\n([\s\S]+?)\n```/
 
