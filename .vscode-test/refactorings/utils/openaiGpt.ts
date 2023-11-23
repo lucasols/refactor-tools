@@ -1,17 +1,12 @@
 import OpenAI from 'openai'
-import { dedent } from '../../../utils-lib/dedent'
-import { joinStrings } from '@utils/stringUtils'
+import { dedent } from './dedent'
+import { OPENAI_API_KEY } from './env'
+import { joinStrings } from './stringUtils'
 
-const API_KEY = process.env.OPENAI_API_KEY
-
-if (!API_KEY) {
-  throw new Error('No OPENAI_API_KEY env variable set')
-}
-
-const extractCodeRegex = /```([a-z]*)\n([\s\S]+?)\n```/
+const extractCodeRegex = /```(.*)\n([\s\S]+?)\n```/
 
 const openai = new OpenAI({
-  apiKey: API_KEY,
+  apiKey: OPENAI_API_KEY,
 })
 
 export async function gptTransform({
@@ -20,23 +15,31 @@ export async function gptTransform({
   input,
   returnExplanation,
   mockResponse,
+  useGpt3,
+  maxTokens = 4096,
 }: {
   prompt: string
   examples?: {
     old: string
     new: string
   }[]
+  maxTokens?: number
   input: string
   returnExplanation?: boolean
   mockResponse?: string
+  useGpt3?: boolean
 }) {
   if (mockResponse) {
     return mockResponse
   }
 
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+
+  const startTimestamp = Date.now()
+
   const response = await openai.chat.completions.create({
-    model: 'gpt-4-1106-preview',
-    max_tokens: 4096,
+    model: model,
+    max_tokens: maxTokens,
     messages: [
       {
         role: 'system',
@@ -63,6 +66,10 @@ export async function gptTransform({
     ],
   })
 
+  const elapsed = Date.now() - startTimestamp
+
+  logUsage(elapsed, model, response)
+
   const firstChoice = response.choices[0]
 
   if (firstChoice?.finish_reason !== 'stop') {
@@ -87,6 +94,8 @@ export async function gptCodeRefactor({
   oldCode,
   language,
   examples,
+  useGpt3,
+  maxTokens = 4096,
 }: {
   instructions: string
   language: string
@@ -95,10 +104,16 @@ export async function gptCodeRefactor({
     refactored: string
   }[]
   oldCode: string
+  useGpt3?: boolean
+  maxTokens?: number
 }): Promise<string> {
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+
+  const startTimestamp = Date.now()
+
   const response = await openai.chat.completions.create({
-    model: 'gpt-4-1106-preview',
-    max_tokens: 4096,
+    model: model,
+    max_tokens: maxTokens,
     messages: [
       {
         role: 'system',
@@ -110,6 +125,10 @@ export async function gptCodeRefactor({
       },
     ],
   })
+
+  const elapsed = Date.now() - startTimestamp
+
+  logUsage(elapsed, model, response)
 
   const firstChoice = response.choices[0]
 
@@ -138,6 +157,121 @@ export async function gptCodeRefactor({
   return responseCode
 }
 
+export async function gptAskAboutCode({
+  question,
+  contextCode,
+  useGpt3,
+  selectedCode,
+  language,
+  maxTokens = 4096,
+}: {
+  question: string
+  language: string
+  selectedCode?: string
+  contextCode: string
+  useGpt3?: boolean
+  maxTokens?: number
+}): Promise<string> {
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+
+  const startTimestamp = Date.now()
+
+  const response = await openai.chat.completions.create({
+    model: model,
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: 'system',
+        content: joinStrings(
+          `You is a programmer expert for the language ${language}. Your task is to answer the questions about the following code as context:`,
+          `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
+          selectedCode &&
+            `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
+          `\n\nAnswer with markdown syntax.`,
+        ),
+      },
+      {
+        role: 'user',
+        content: dedent(question),
+      },
+    ],
+  })
+
+  const elapsed = Date.now() - startTimestamp
+
+  logUsage(elapsed, model, response)
+
+  const firstChoice = response.choices[0]
+
+  if (firstChoice?.finish_reason !== 'stop') {
+    throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
+  }
+
+  if (!firstChoice?.message.content) {
+    throw new Error('No response from OpenAI')
+  }
+
+  return firstChoice.message.content
+}
+
+export async function gptGenericPrompt({
+  prompt,
+  useGpt3,
+  maxTokens = 4096,
+}: {
+  prompt: string
+  useGpt3?: boolean
+  maxTokens?: number
+}): Promise<string> {
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+
+  const startTimestamp = Date.now()
+
+  const response = await openai.chat.completions.create({
+    model: model,
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: 'system',
+        content: `You are ChatGPT, a large language model trained by OpenAI. Follow the user's instructions carefully. Respond using markdown.`,
+      },
+      {
+        role: 'user',
+        content: dedent(prompt),
+      },
+    ],
+  })
+
+  const elapsed = Date.now() - startTimestamp
+
+  logUsage(elapsed, model, response)
+
+  const firstChoice = response.choices[0]
+
+  if (firstChoice?.finish_reason !== 'stop') {
+    throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
+  }
+
+  if (!firstChoice?.message.content) {
+    throw new Error('No response from OpenAI')
+  }
+
+  return firstChoice.message.content
+}
+
+function logUsage(
+  elapsed: number,
+  model: string,
+  response: OpenAI.Chat.Completions.ChatCompletion,
+) {
+  refacTools.log(
+    `OpenAI took ${formatNum(
+      elapsed / 1000,
+    )}s using model "${model}".\nTokens used:\n  Prompt:${response.usage
+      ?.prompt_tokens}\n  Completion:${response.usage?.completion_tokens}`,
+  )
+}
+
 function generateCodePrompt(
   language: string,
   instructions: string,
@@ -160,4 +294,11 @@ function generateCodePrompt(
         )
         .join('\n\n-----\n\n')}`,
   )
+}
+
+function formatNum(num: number) {
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }

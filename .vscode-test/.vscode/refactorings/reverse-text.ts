@@ -1,5 +1,3 @@
-import { mockGpt4 } from '../../refactorings/utils/foo'
-
 refacTools.config({
   name: 'Reverse text',
   description: 'Reverse text',

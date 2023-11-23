@@ -1,37 +1,38 @@
-import { gptCodeRefactor } from '.vscode/refactorings/utils/openaiGpt';
+import { gptCodeRefactor } from './openaiGpt'
 
 export async function simpleRefactor(
   instructions: string,
-  ctx: RefacToolsCtx<'quickReplace'>,
+  ctx: RefacToolsCtx<{ variants: 'quickReplace' }>,
+  useGpt3?: boolean,
 ) {
-  const selectedCode = await ctx.activeEditor.getSelected();
+  const selectedCode = await ctx.activeEditor.getSelected()
 
   if (!selectedCode) {
-    throw new Error('No code selected');
+    throw new Error('No code selected')
   }
 
-  const refactoredCode = '<div />'
-  // await gptCodeRefactor({
-  //   instructions: instructions,
-  //   oldCode: selectedCode.text,
-  //   language: selectedCode.language,
-  // });
+  const refactoredCode = await gptCodeRefactor({
+    instructions: instructions,
+    oldCode: selectedCode.text,
+    language: selectedCode.language,
+    useGpt3,
+  })
 
   if (ctx.variant === 'quickReplace') {
-    await selectedCode.replaceWith(refactoredCode);
+    await selectedCode.replaceWith(refactoredCode)
 
-    return;
+    return
   }
 
   const acceptedRefactoredCode = await ctx.showDiff({
     original: selectedCode,
     refactored: refactoredCode,
-    ext: ctx.activeEditor.getExtension(),
-  });
+    ext: ctx.activeEditor.extension,
+  })
 
   if (acceptedRefactoredCode) {
-    await ctx.activeEditor.setContent(acceptedRefactoredCode);
+    await ctx.activeEditor.setContent(acceptedRefactoredCode)
 
-    await ctx.activeEditor.format();
+    await ctx.activeEditor.format()
   }
 }

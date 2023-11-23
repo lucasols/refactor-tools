@@ -1,7 +1,11 @@
-import { gptCodeRefactor } from '.vscode/refactorings/utils/openaiGpt';
-import { simpleRefactor } from '.vscode/refactorings/utils/simpleRefactor';
+import { gptCodeRefactor } from './utils/openaiGpt'
+import { simpleRefactor } from './utils/simpleRefactor'
 
-refacTools.config({
+type Props = {
+  variants: 'quickReplace'
+}
+
+refacTools.config<Props>({
   name: 'Fix syntax errors',
   variants: {
     quickReplace: 'Quick Replace',
@@ -9,8 +13,8 @@ refacTools.config({
   enabledWhen: {
     hasSelection: true,
   },
-});
+})
 
-refacTools.runRefactor<'quickReplace'>(async (ctx) => {
-  await simpleRefactor('Fix syntax errors', ctx);
-});
+refacTools.runRefactor<Props>(async (ctx) => {
+  await simpleRefactor('Fix syntax errors', ctx)
+})

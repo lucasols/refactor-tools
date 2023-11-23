@@ -1,5 +1,4 @@
 import { rc_parse, rc_string } from 'runcheck'
-import { mockGpt4 } from './utils/foo'
 
 refacTools.config({
   name: 'Convert loop to for of',

@@ -1,4 +1,4 @@
-import { gptTransform } from '.vscode/refactorings/utils/openaiGpt';
+import { gptTransform } from './utils/openaiGpt'
 
 refacTools.config({
   name: 'Translate text',
@@ -7,24 +7,25 @@ refacTools.config({
     default: 'EN -> PT',
     ptToEn: 'PT -> EN',
   },
-});
+})
 
-refacTools.runRefactor<'default' | 'ptToEn'>(async (ctx) => {
-  const selectedCode = await ctx.activeEditor.getSelected();
+refacTools.runRefactor<{
+  variants: 'default' | 'ptToEn'
+}>(async (ctx) => {
+  const selectedCode = await ctx.activeEditor.getSelected()
 
-  const textToTranslate = selectedCode
-    ? selectedCode.text
-    : await ctx.prompt.text('Text to translate');
+  const textToTranslate =
+    selectedCode ? selectedCode.text : await ctx.prompt.text('Text to translate')
 
-  if (!textToTranslate) return;
+  if (!textToTranslate) return
 
   const translatedText = await gptTransform({
     input: textToTranslate,
     prompt:
-      ctx.variant === 'ptToEn'
-        ? 'Translate from Portuguese to English'
-        : 'Translate from English to Portuguese',
-  });
+      ctx.variant === 'ptToEn' ?
+        'Translate from Portuguese to English'
+      : 'Translate from English to Portuguese',
+  })
 
-  await ctx.fs.createTempFile('txt', translatedText).openEditor('right');
-});
+  await ctx.fs.createTempFile('txt', translatedText).openEditor('right')
+})

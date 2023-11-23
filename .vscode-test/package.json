@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "openai": "^4.19.0",
-    "runcheck": "^0.53.0"
+    "runcheck": "^0.53.0",
+    "typescript": "^5.3.2"
   }
 }

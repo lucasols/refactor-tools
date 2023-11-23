@@ -79,11 +79,7 @@
       "title": "Refactools",
       "properties": {
         "refactools.userRefactoringsProject": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null,
+          "type": "string",
           "description": "Path to a project that has user defined refactorings"
         }
       }

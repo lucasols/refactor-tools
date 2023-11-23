@@ -14,7 +14,7 @@ import { dedent, notNullish } from './utils'
 import { MemFS } from './memFs'
 
 const scriptsFolder = `/.vscode/refactorings`
-const extractConfigRegex = /refacTools\.config\((\{[\s\S]*?\})\)/
+const extractConfigRegex = /refacTools\.config(?:<\w+>)*\((\{[\s\S]*?\})\)/
 
 function getActiveWorkspaceFolder() {
   if (!vscode.workspace.workspaceFolders?.length) {
@@ -52,9 +52,11 @@ function createOrUpdateApiDefinition() {
 
   const importPath = posix.join(extensionFolder!, 'dist/refactool')
   const apiDefinitionContent = dedent`
+    type RefactorProps = import('${importPath}').RefactorProps
+
     declare const refacTools: typeof import('${importPath}').refacTools
 
-    declare type RefacToolsCtx<V extends string> =
+    declare type RefacToolsCtx<V extends RefactorProps = RefactorProps> =
       import('${importPath}').RefacToolsCtx<V>
   `
   if (scriptsFolderUri) {
@@ -69,10 +71,7 @@ function createOrUpdateApiDefinition() {
   const userProjectFolder = getUserRefactoringsProjectUri()
 
   if (userProjectFolder) {
-    const apiDefinitionPath = posix.join(
-      userProjectFolder.path,
-      'refactorings/refactools-api.d.ts',
-    )
+    const apiDefinitionPath = posix.join(userProjectFolder.path, 'refactools-api.d.ts')
 
     vscode.workspace.fs.writeFile(
       userProjectFolder.with({ path: apiDefinitionPath }),
@@ -84,7 +83,7 @@ function createOrUpdateApiDefinition() {
 function getUserRefactoringsProjectUri() {
   const userRefactoringProject = vscode.workspace
     .getConfiguration('refactools')
-    .get<string | null>('userRefactoringsProject')
+    .get<string>('userRefactoringsProject')
 
   if (!userRefactoringProject) {
     return null
@@ -93,7 +92,10 @@ function getUserRefactoringsProjectUri() {
   return vscode.Uri.file(posix.join(userRefactoringProject, '/refactorings'))
 }
 
-async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
+async function getRefactoringsList(
+  outputChannel: vscode.OutputChannel,
+  mostUsedRefactorings: { [filename: string]: number },
+) {
   const folderToCheck: vscode.Uri[] = []
 
   const userProjectFolder = getUserRefactoringsProjectUri()
@@ -112,10 +114,11 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
     folderToCheck.push(scriptsFolderUri)
   }
 
-  const availableRefactorings: {
+  let availableRefactorings: {
     configCode: string
     filename: string
     rootDir: string
+    scope: 'user' | 'workspace'
   }[] = []
 
   type AvailableRefactoringsConfig = {
@@ -124,6 +127,13 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
     label: string
     rootDir: string
     variant: string
+    options: {
+      label: string
+      description: string | undefined
+      value: string
+      picked: boolean
+    }[]
+    scope: 'user' | 'workspace'
   }
 
   const availableRefactoringsConfig: AvailableRefactoringsConfig[] = []
@@ -140,6 +150,10 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
         const fileExtension = posix.extname(filePath)
 
         if (fileExtension !== '.ts') {
+          continue
+        }
+
+        if (filePath.includes('refactools-api.d.ts')) {
           continue
         }
 
@@ -172,10 +186,19 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
           configCode,
           filename,
           rootDir: projectFolder.path,
+          scope: projectFolder === userProjectFolder ? 'user' : 'workspace',
         })
       }
     }
   }
+
+  availableRefactorings = sortBy(
+    availableRefactorings,
+    ({ filename }) => mostUsedRefactorings[filename] ?? 0,
+    {
+      order: 'desc',
+    },
+  )
 
   try {
     const config = vm.runInNewContext(
@@ -213,12 +236,27 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
         }
       }
 
-      const defaultVariant = {
+      const defaultVariant: AvailableRefactoringsConfig = {
         config: cfg,
         filename: notNullish(availableRefactorings[index]).filename,
         rootDir: notNullish(availableRefactorings[index]).rootDir,
         label: cfg.name,
         variant: 'default',
+        scope: notNullish(availableRefactorings[index]).scope,
+        options: [],
+      }
+
+      if (cfg.options) {
+        for (const [optionValue, option] of Object.entries(cfg.options)) {
+          if (!option.variants || option.variants.includes('default')) {
+            defaultVariant.options.push({
+              label: option.label,
+              description: option.description,
+              value: optionValue,
+              picked: !!option.default,
+            })
+          }
+        }
       }
 
       availableRefactoringsConfig.push(defaultVariant)
@@ -226,9 +264,24 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
       if (cfg.variants) {
         for (const [variant, name] of Object.entries(cfg.variants)) {
           if (variant === 'default') {
-            defaultVariant.label = `${cfg.name} - ${name}`
+            defaultVariant.label = `${cfg.name} / ${name}`
 
             continue
+          }
+
+          let options: AvailableRefactoringsConfig['options'] = []
+
+          if (cfg.options) {
+            for (const [optionValue, option] of Object.entries(cfg.options)) {
+              if (!option.variants || option.variants.includes(variant)) {
+                options.push({
+                  label: option.label,
+                  description: option.description,
+                  value: optionValue,
+                  picked: !!option.default,
+                })
+              }
+            }
           }
 
           availableRefactoringsConfig.push({
@@ -236,7 +289,9 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
             filename: notNullish(availableRefactorings[index]).filename,
             rootDir: notNullish(availableRefactorings[index]).rootDir,
             variant,
-            label: `${cfg.name} - ${name}`,
+            label: `${cfg.name} / ${name}`,
+            scope: notNullish(availableRefactorings[index]).scope,
+            options,
           })
         }
       }
@@ -251,6 +306,10 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
   return availableRefactoringsConfig.map(
     (item): vscode.QuickPickItem & AvailableRefactoringsConfig => ({
       description: item.config.description,
+      iconPath:
+        item.scope === 'user' ?
+          new vscode.ThemeIcon('lightbulb')
+        : new vscode.ThemeIcon('file-directory'),
       ...item,
     }),
   )
@@ -258,6 +317,11 @@ async function getRefactoringsList(outputChannel: vscode.OutputChannel) {
 
 export function activate(context: vscode.ExtensionContext) {
   const memFs = new MemFS()
+
+  const mostUsedRefactorings =
+    context.globalState.get<{
+      [filename: string]: number
+    }>('mostUsedRefactorings') ?? {}
 
   const outputChannel = vscode.window.createOutputChannel('RefacTools')
 
@@ -278,7 +342,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('refactools.listRefactorings', async () => {
       const selectedRefactoring = await vscode.window.showQuickPick(
-        getRefactoringsList(outputChannel),
+        getRefactoringsList(outputChannel, mostUsedRefactorings),
         {
           title: 'Available refactorings',
           matchOnDescription: true,
@@ -287,6 +351,21 @@ export function activate(context: vscode.ExtensionContext) {
       )
 
       if (!selectedRefactoring) return
+
+      let selectedOption: string | null = null
+
+      if (selectedRefactoring.options.length) {
+        selectedOption =
+          (
+            await vscode.window.showQuickPick(selectedRefactoring.options, {
+              title: 'Available options',
+              matchOnDescription: true,
+              placeHolder: 'Select an option',
+            })
+          )?.value ?? null
+
+        if (!selectedOption) return
+      }
 
       try {
         const bundledScript = await build({
@@ -331,7 +410,7 @@ export function activate(context: vscode.ExtensionContext) {
             token.onCancellationRequested(() => {
               refactoringEvents.emit('cancel')
 
-              outputChannel.appendLine('User canceled the long running operation')
+              outputChannel.appendLine('User canceled the refactoring')
 
               cleanup()
             })
@@ -363,6 +442,7 @@ export function activate(context: vscode.ExtensionContext) {
               memFs,
               refactoringEvents,
               selectedRefactoring.variant,
+              selectedOption,
               getActiveWorkspaceFolder(),
               progress,
               setHistoryValue,
@@ -393,6 +473,12 @@ export function activate(context: vscode.ExtensionContext) {
                 commandsHistory.get(selectedRefactoring.filename)!.runs.push({
                   variant: selectedRefactoring.variant,
                   values: runsValues,
+                })
+
+                context.globalState.update('mostUsedRefactorings', {
+                  ...mostUsedRefactorings,
+                  [selectedRefactoring.filename]:
+                    (mostUsedRefactorings[selectedRefactoring.filename] ?? 0) + 1,
                 })
               } catch (e) {
                 const errorMsg = getErrorMessage(e)
@@ -457,4 +543,32 @@ function getErrorMessage(e: unknown): string {
     : typeof e === 'object' && e && 'message' in e ? String(e?.message)
     : ''
   )
+}
+
+type Options = {
+  order?: 'asc' | 'desc'
+}
+
+export function sortBy<T>(
+  arr: T[],
+  getValueToSort: (item: T) => number | string,
+  { order }: Options = {},
+) {
+  const reverse = order === 'asc'
+
+  // eslint-disable-next-line no-restricted-syntax -- in this case is ok to use this syntax
+  return [...arr].sort((a, b) => {
+    const aPriority = getValueToSort(a)
+    const bPriority = getValueToSort(b)
+
+    if (aPriority < bPriority) {
+      return reverse ? -1 : 1
+    }
+
+    if (aPriority > bPriority) {
+      return reverse ? 1 : -1
+    }
+
+    return 0
+  })
 }

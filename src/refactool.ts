@@ -7,9 +7,22 @@ import { posix } from 'path'
 
 // Version: 0.1.0
 
-type LanguageId = 'javascript' | 'typescript' | 'typescriptreact' | 'json' | (string & {})
+type LanguageId =
+  | 'javascript'
+  | 'typescript'
+  | 'typescriptreact'
+  | 'json'
+  | 'markdown'
+  | (string & {})
 
-export type RefactorConfig = {
+type Option = {
+  variants?: string[]
+  label: string
+  description?: string
+  default?: boolean
+}
+
+export type RefactorConfig<T extends RefactorProps = RefactorProps> = {
   name: string
   description?: string
   enabledWhen?: {
@@ -17,18 +30,25 @@ export type RefactorConfig = {
     activeFileContains?: string
     activeLanguageIs?: LanguageId[]
   }
-  variants?: { default?: string } & {
-    [id: string]: string
-  }
+  variants?: T['variants'] extends string ?
+    { default?: string } & {
+      [K in T['variants']]: string
+    }
+  : { default?: string } & Record<string, string>
+  options?: T['options'] extends string ?
+    {
+      [K in T['options']]: Option
+    }
+  : Record<string, Option>
 }
 
-function config(config: RefactorConfig) {
+function config<T extends RefactorProps = RefactorProps>(config: RefactorConfig<T>) {
   return undefined
 }
 
-let refactorCtx: RefacToolsCtx<string> | null = null
+let refactorCtx: RefacToolsCtx<RefactorProps> | null = null
 
-type RefactorFn<V extends string> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
+type RefactorFn<V extends RefactorProps> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
 
 type EditorMethods = {
   getSelected: () => Promise<Selected | null>
@@ -45,8 +65,8 @@ type EditorMethods = {
   filename: string
   filepath: string
   editorUri: vsc.Uri
-  getLanguage: () => LanguageId
-  getExtension: () => string
+  language: LanguageId
+  extension: string
   getContent: () => Thenable<string>
 }
 
@@ -61,8 +81,14 @@ type Selected = {
   editorUri: vsc.Uri
 }
 
-export type RefacToolsCtx<Variants extends string> = {
-  variant: Variants
+export type RefactorProps = {
+  variants?: string
+  options?: string
+}
+
+export type RefacToolsCtx<Props extends RefactorProps> = {
+  variant: Props['variants']
+  selectedOption: Props['options'] | undefined
   runResult: {}
   history: {
     getLast: () => {
@@ -198,6 +224,7 @@ export async function initializeCtx(
   memFs: MemFS,
   refactoringEvents: Emitter<RefactoringEvents>,
   variant: string | null,
+  selectedOption: string | null,
   activeWorkspaceFolder: vsc.WorkspaceFolder | null,
   setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>,
   addValueToHistory: (key: string, value: any) => void,
@@ -228,17 +255,18 @@ export async function initializeCtx(
     isCancelled = true
   })
 
-  const showDiff: RefacToolsCtx<string>['showDiff'] = async ({
+  const showDiff: RefacToolsCtx<RefactorProps>['showDiff'] = async ({
     title,
     original,
     refactored,
-    ext,
+    ext: _ext,
   }) => {
     throwIfCancelled()
 
+    const ext = _ext ? `.${_ext}` : ''
+
     const leftUri =
-      typeof original === 'string' ?
-        vscode.Uri.parse(`refactoolsfs:/diff.original${ext || ''}`)
+      typeof original === 'string' ? vscode.Uri.parse(`refactoolsfs:/diff.original${ext}`)
       : 'editor' in original ? original.editor.editorUri
       : original.editorUri
 
@@ -250,7 +278,7 @@ export async function initializeCtx(
     }
 
     const virtualRefactoredFileUri = vscode.Uri.parse(
-      `refactoolsfs:/diff.refactored${ext || ''}`,
+      `refactoolsfs:/diff.refactored${ext}`,
     )
 
     let refactoredFile = refactored
@@ -286,6 +314,16 @@ export async function initializeCtx(
       },
     )
 
+    const diffEditor = vscode.window.visibleTextEditors.find(
+      (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
+    )
+
+    // format entire diff editor
+    if (diffEditor) {
+      await vscode.commands.executeCommand('editor.action.formatDocument')
+      await diffEditor.document.save()
+    }
+
     const userResponse = defer<string | false>()
 
     const dispose = vscode.commands.registerCommand(
@@ -314,21 +352,10 @@ export async function initializeCtx(
     dispose.dispose()
     previewIsClosedDispose.dispose()
 
-    // find and close the diff editor
-    const diffEditor = vscode.window.visibleTextEditors.find(
-      (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
-    )
-
     if (diffEditor) {
       await vscode.window.showTextDocument(diffEditor.document)
       vscode.commands.executeCommand('workbench.action.closeActiveEditor')
     }
-
-    // remove the virtual files
-    if (typeof original === 'string') {
-      memFs.delete(leftUri)
-    }
-    memFs.delete(virtualRefactoredFileUri)
 
     return result
   }
@@ -362,7 +389,7 @@ export async function initializeCtx(
       return editor
     }
 
-    const getSelected: RefacToolsCtx<string>['activeEditor']['getSelected'] =
+    const getSelected: RefacToolsCtx<RefactorProps>['activeEditor']['getSelected'] =
       async () => {
         if (isCancelled) return null
 
@@ -399,16 +426,8 @@ export async function initializeCtx(
       }
     return {
       getSelected,
-      getLanguage: () => {
-        if (isCancelled) return ''
-
-        return _editor.document.languageId as LanguageId
-      },
-      getExtension: () => {
-        if (isCancelled) return ''
-
-        return _editor.document.fileName.split('.').pop() ?? ''
-      },
+      language: _editor.document.languageId as LanguageId,
+      extension: _editor.document.fileName.split('.').pop() ?? '',
       save: async () => {
         if (isCancelled) return
 
@@ -494,7 +513,7 @@ export async function initializeCtx(
     disposeCommandPaletteOptions?.()
   })
 
-  const createTempFile: RefacToolsCtx<string>['fs']['createTempFile'] = (
+  const createTempFile: RefacToolsCtx<RefactorProps>['fs']['createTempFile'] = (
     extension: string,
     initialContent: string = '',
   ) => {
@@ -544,6 +563,7 @@ export async function initializeCtx(
       refactoringEvents.emit('cancelParent')
     },
     log,
+    selectedOption: selectedOption as any,
     history: {
       add(key, value) {
         addValueToHistory(key, value)
@@ -954,12 +974,23 @@ export function getCtx() {
   return refactorCtx
 }
 
+export function log(value: any) {
+  if (!refactorCtx) {
+    throw new Error('Refactor context not set')
+  }
+
+  refactorCtx.log(value)
+}
+
 export const refacTools = {
   config,
   runRefactor,
+  log,
 }
 
-async function runRefactor<V extends string = string>(fn: RefactorFn<V>): Promise<{}> {
+async function runRefactor<V extends RefactorProps = RefactorProps>(
+  fn: RefactorFn<V>,
+): Promise<{}> {
   if (!refactorCtx) {
     throw new Error('Refactor context not set')
   }

@@ -3,3 +3,4 @@ node_modules
 *.vsix
 refactools-api.d.ts
 .vscode-test/.env
+.vscode-test/refactorings/utils/env.ts

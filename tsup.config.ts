@@ -5,6 +5,7 @@ export default defineConfig({
   clean: true,
   format: ['cjs', 'esm'],
   external: ['vscode'],
+  sourcemap: true,
   esbuildOptions(options) {
     options.mangleProps = /[^_]_$/
   },
