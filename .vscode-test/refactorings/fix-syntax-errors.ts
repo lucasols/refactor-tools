@@ -1,11 +1,9 @@
 import { gptCodeRefactor } from './utils/openaiGpt'
 import { simpleRefactor } from './utils/simpleRefactor'
 
-type Props = {
-  variants: 'quickReplace'
-}
+type Variants = 'quickReplace'
 
-refacTools.config<Props>({
+refacTools.config<Variants>({
   name: 'Fix syntax errors',
   variants: {
     quickReplace: 'Quick Replace',
@@ -15,6 +13,6 @@ refacTools.config<Props>({
   },
 })
 
-refacTools.runRefactor<Props>(async (ctx) => {
+refacTools.runRefactor<Variants>(async (ctx) => {
   await simpleRefactor('Fix syntax errors', ctx)
 })

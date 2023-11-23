@@ -2,7 +2,7 @@ import { gptCodeRefactor } from './openaiGpt'
 
 export async function simpleRefactor(
   instructions: string,
-  ctx: RefacToolsCtx<{ variants: 'quickReplace' }>,
+  ctx: RefacToolsCtx<'quickReplace'>,
   useGpt3?: boolean,
 ) {
   const selectedCode = await ctx.activeEditor.getSelected()

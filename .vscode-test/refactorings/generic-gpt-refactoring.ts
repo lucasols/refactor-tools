@@ -1,11 +1,8 @@
 import { gptCodeRefactor } from './utils/openaiGpt'
 
-type RefactorProps = {
-  variants: 'quickReplace' | 'withLastInstruction'
-  options: 'useGpt4' | 'useGpt3'
-}
+type Variants = 'quickReplace' | 'withLastInstruction'
 
-refacTools.config<RefactorProps>({
+refacTools.config<Variants>({
   name: 'Generic GPT Refactoring',
   variants: {
     quickReplace: 'Quick Replace',
@@ -14,18 +11,21 @@ refacTools.config<RefactorProps>({
   enabledWhen: {
     hasSelection: true,
   },
-  options: {
-    useGpt4: {
-      default: true,
-      label: 'Use GPT-4',
-    },
-    useGpt3: {
-      label: 'Use GPT-3',
-    },
-  },
 })
 
-refacTools.runRefactor<RefactorProps>(async (ctx) => {
+refacTools.runRefactor<Variants>(async (ctx) => {
+  const modelToUse = await ctx.prompt.quickPick({
+    options: [
+      { label: 'Use GPT-4', value: 'useGpt4' },
+      { label: 'Use GPT-3', value: 'useGpt3' },
+    ],
+    title: 'Select GPT model',
+  })
+
+  if (!modelToUse) {
+    return
+  }
+
   const selectedCode = await ctx.activeEditor.getSelected()
 
   if (!selectedCode) {
@@ -49,7 +49,7 @@ refacTools.runRefactor<RefactorProps>(async (ctx) => {
     instructions: instructions,
     oldCode: selectedCode.text,
     language: selectedCode.language,
-    useGpt3: ctx.selectedOption === 'useGpt3',
+    useGpt3: modelToUse === 'useGpt3',
   })
 
   if (ctx.variant === 'quickReplace' || ctx.variant === 'withLastInstruction') {

@@ -1,26 +1,27 @@
 import { gptAskAboutCode, gptCodeRefactor } from './utils/openaiGpt'
 
-type RefactorProps = {
-  options: 'useGpt4' | 'useGpt3'
-}
+type Variants = 'useGpt4' | 'useGpt3'
 
-refacTools.config<RefactorProps>({
+refacTools.config<Variants>({
   name: 'Generic GPT question about selected code',
-  options: {
-    useGpt4: {
-      default: true,
-      label: 'Use GPT-4',
-    },
-    useGpt3: {
-      label: 'Use GPT-3',
-    },
-  },
   enabledWhen: {
     hasSelection: true,
   },
 })
 
-refacTools.runRefactor<RefactorProps>(async (ctx) => {
+refacTools.runRefactor<Variants>(async (ctx) => {
+  const modelToUse = await ctx.prompt.quickPick({
+    options: [
+      { label: 'Use GPT-4', value: 'useGpt4' },
+      { label: 'Use GPT-3', value: 'useGpt3' },
+    ],
+    title: 'Select GPT model',
+  })
+
+  if (!modelToUse) {
+    return
+  }
+
   const selectedCode = await ctx.activeEditor.getSelected()
 
   const instructions = await ctx.prompt.text('Code question')
@@ -39,7 +40,7 @@ refacTools.runRefactor<RefactorProps>(async (ctx) => {
     question: instructions,
     contextCode: selectedText,
     language: ctx.activeEditor.language,
-    useGpt3: ctx.selectedOption === 'useGpt3',
+    useGpt3: modelToUse === 'useGpt3',
   })
 
   await ctx.ide.newUnsavedFile({

@@ -25,16 +25,10 @@ type LanguageId =
   | 'ruby'
   | 'php'
   | 'perl'
+  // eslint-disable-next-line @typescript-eslint/ban-types
   | (string & {})
 
-type Option = {
-  variants?: string[]
-  label: string
-  description?: string
-  default?: boolean
-}
-
-export type RefactorConfig<T extends RefactorProps = RefactorProps> = {
+export type RefactorConfig<V extends string> = {
   name: string
   description?: string
   enabledWhen?: {
@@ -42,25 +36,19 @@ export type RefactorConfig<T extends RefactorProps = RefactorProps> = {
     activeFileContains?: string
     activeLanguageIs?: LanguageId[]
   }
-  variants?: T['variants'] extends string ?
-    { default?: string } & {
-      [K in T['variants']]: string
-    }
-  : { default?: string } & Record<string, string>
-  options?: T['options'] extends string ?
-    {
-      [K in T['options']]: Option
-    }
-  : Record<string, Option>
+  variants?: { default?: string } & {
+    [K in V]: string
+  }
 }
 
-function config<T extends RefactorProps = RefactorProps>(config: RefactorConfig<T>) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function config<T extends string = string>(cfg: RefactorConfig<T>) {
   return undefined
 }
 
-let refactorCtx: RefacToolsCtx<RefactorProps> | null = null
+let refactorCtx: RefacToolsCtx<string> | null = null
 
-type RefactorFn<V extends RefactorProps> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
+type RefactorFn<V extends string> = (ctx: RefacToolsCtx<V>) => Promise<void> | void
 
 type EditorMethods = {
   getSelected: () => Promise<Selected | null>
@@ -93,15 +81,8 @@ type Selected = {
   editorUri: vsc.Uri
 }
 
-export type RefactorProps = {
-  variants?: string
-  options?: string
-}
-
-export type RefacToolsCtx<Props extends RefactorProps> = {
-  variant: Props['variants']
-  selectedOption: Props['options'] | undefined
-  runResult: {}
+export type RefacToolsCtx<V extends string> = {
+  variant: V
   history: {
     getLast: () => {
       get: <T>(key: string) => T | undefined
@@ -155,7 +136,7 @@ export type RefacToolsCtx<Props extends RefactorProps> = {
       uri: vsc.Uri
       dispose: () => void
       update: (content: string) => void
-      getContent: () => Promise<string>
+      getContent: () => string
       openEditor: (editorGroup?: 'right' | 'current') => Promise<EditorMethods>
     }
     createMemFsPath: (path: string) => void
@@ -231,17 +212,16 @@ export type HistoryEntry = {
 }
 
 /** @internal */
-export async function initializeCtx(
+export function initializeCtx(
   vscode: typeof vsc,
   memFs: MemFS,
   refactoringEvents: Emitter<RefactoringEvents>,
   variant: string | null,
-  selectedOption: string | null,
   activeWorkspaceFolder: vsc.WorkspaceFolder | null,
   setGeneralProgress: vsc.Progress<{ message?: string; increment?: number }>,
   addValueToHistory: (key: string, value: any) => void,
   getHistory: () => HistoryEntry,
-  log: (value: any) => void,
+  logOnExtChannel: (value: any) => void,
 ) {
   let isCancelled = false
 
@@ -267,7 +247,7 @@ export async function initializeCtx(
     isCancelled = true
   })
 
-  const showDiff: RefacToolsCtx<RefactorProps>['showDiff'] = async ({
+  const showDiff: RefacToolsCtx<string>['showDiff'] = async ({
     title,
     original,
     refactored,
@@ -392,17 +372,13 @@ export async function initializeCtx(
       return editor
     }
 
-    const getSelected: RefacToolsCtx<RefactorProps>['activeEditor']['getSelected'] =
+    const getSelected: RefacToolsCtx<string>['activeEditor']['getSelected'] =
       async () => {
         if (isCancelled) return null
 
         const editor = await getEditor()
 
         await focusEditor(editor)
-
-        if (!editor) {
-          return null
-        }
 
         if (editor.selection.isEmpty) {
           return null
@@ -411,7 +387,7 @@ export async function initializeCtx(
         const text = editor.document.getText(editor.selection)
 
         return {
-          text: text,
+          text,
           language: editor.document.languageId as LanguageId,
           range: {
             start: editor.document.offsetAt(editor.selection.start),
@@ -419,10 +395,10 @@ export async function initializeCtx(
           },
           editorUri: editor.document.uri,
           replaceWith: async (code: string) => {
-            const editor = await getEditor()
+            const edtr = await getEditor()
 
-            await editor.edit((editBuilder) => {
-              editBuilder.replace(editor.selection, code)
+            await edtr.edit((editBuilder) => {
+              editBuilder.replace(edtr.selection, code)
             })
           },
         }
@@ -451,7 +427,7 @@ export async function initializeCtx(
 
         const editor = await getEditor()
 
-        editor?.edit((editBuilder) => {
+        editor.edit((editBuilder) => {
           const fullRange = editor.document.validateRange(
             new vscode.Range(
               new vscode.Position(0, 0),
@@ -465,7 +441,7 @@ export async function initializeCtx(
       format: async () => {
         if (isCancelled) return
 
-        vscode.commands.executeCommand('editor.action.formatDocument')
+        await vscode.commands.executeCommand('editor.action.formatDocument')
       },
       async insertContent(content, position) {
         if (isCancelled) return
@@ -481,7 +457,7 @@ export async function initializeCtx(
 
         const editor = await getEditor()
 
-        editor?.edit((editBuilder) => {
+        editor.edit((editBuilder) => {
           editBuilder.replace(
             new vscode.Range(
               editor.document.positionAt(range.start),
@@ -514,9 +490,9 @@ export async function initializeCtx(
     disposeCommandPaletteOptions?.()
   })
 
-  const createTempFile: RefacToolsCtx<RefactorProps>['fs']['createTempFile'] = (
+  const createTempFile: RefacToolsCtx<string>['fs']['createTempFile'] = (
     extension: string,
-    initialContent: string = '',
+    initialContent = '',
   ) => {
     const uri = vscode.Uri.parse(
       `refactoolsfs:/temp-file-${Date.now()}${
@@ -540,7 +516,7 @@ export async function initializeCtx(
           overwrite: true,
         })
       },
-      async getContent() {
+      getContent() {
         return memFs.readFile(uri).toString()
       },
       async openEditor(editorGroup: 'right' | 'current' = 'current') {
@@ -563,14 +539,13 @@ export async function initializeCtx(
     forceCancel() {
       refactoringEvents.emit('cancelParent')
     },
-    log,
-    selectedOption: selectedOption as any,
+    log: logOnExtChannel,
     history: {
       add(key, value) {
         addValueToHistory(key, value)
       },
       getLast() {
-        let lastHistoryEntry = getHistory().runs.at(-1)
+        const lastHistoryEntry = getHistory().runs.at(-1)
 
         if (!lastHistoryEntry) {
           return null
@@ -578,7 +553,7 @@ export async function initializeCtx(
 
         return {
           get(key) {
-            return lastHistoryEntry!.values[key] as any
+            return lastHistoryEntry.values[key] as any
           },
           variant: lastHistoryEntry.variant,
         }
@@ -595,7 +570,7 @@ export async function initializeCtx(
         const selected = await vscode.window.showQuickPick(
           options.map(({ label, value }) => ({
             label,
-            value: value,
+            value,
             picked: value === defaultValue,
           })),
           { title },
@@ -609,7 +584,7 @@ export async function initializeCtx(
         const selected = await vscode.window.showQuickPick(
           options.map(({ label, value }) => ({
             label,
-            value: value,
+            value,
             picked: defaultValue?.includes(value) ?? false,
           })),
           { title, canPickMany: true },
@@ -651,7 +626,6 @@ export async function initializeCtx(
         return selected
       },
     },
-    runResult: {},
     variant: variant as any,
     vscodeCtx: vscode,
     ide: {
@@ -694,7 +668,7 @@ export async function initializeCtx(
                 }
               }),
             ]).finally(() => {
-              resolveCancel?.()
+              resolveCancel()
             })
           },
         )
@@ -802,7 +776,7 @@ export async function initializeCtx(
           throw new Error('No active workspace folder')
         }
 
-        return activeWorkspaceFolder?.uri.path
+        return activeWorkspaceFolder.uri.path
       },
       getPathRelativeToWorkspace(relativePath) {
         throwIfCancelled()
@@ -989,14 +963,11 @@ export const refacTools = {
   log,
 }
 
-async function runRefactor<V extends RefactorProps = RefactorProps>(
-  fn: RefactorFn<V>,
-): Promise<{}> {
+async function runRefactor<V extends string = string>(fn: RefactorFn<V>): Promise<void> {
   if (!refactorCtx) {
     throw new Error('Refactor context not set')
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   await fn(refactorCtx as any)
-
-  return refactorCtx.runResult
 }

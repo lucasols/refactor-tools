@@ -28,6 +28,9 @@ devDependencies:
   eslint:
     specifier: ^8.44.0
     version: 8.53.0
+  eslint-plugin-vitest:
+    specifier: ^0.3.10
+    version: 0.3.10(@typescript-eslint/eslint-plugin@5.62.0)(eslint@8.53.0)(typescript@5.2.2)
   evtmitter:
     specifier: ^0.3.3
     version: 0.3.3(react-dom@18.2.0)(react@18.2.0)
@@ -1040,6 +1043,27 @@ packages:
   /escape-string-regexp@5.0.0:
     resolution: {integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==}
     engines: {node: '>=12'}
+    dev: true
+
+  /eslint-plugin-vitest@0.3.10(@typescript-eslint/eslint-plugin@5.62.0)(eslint@8.53.0)(typescript@5.2.2):
+    resolution: {integrity: sha512-08lj4rdhZHYyHk+Py2nJ7SlE6arP8GNfGXl9jVqhe9s5JoZIGiBpIkLGX+VNBiB6vXTn56H6Ant7Koc6XzRjtQ==}
+    engines: {node: 14.x || >= 16}
+    peerDependencies:
+      '@typescript-eslint/eslint-plugin': '*'
+      eslint: '>=8.0.0'
+      vitest: '*'
+    peerDependenciesMeta:
+      '@typescript-eslint/eslint-plugin':
+        optional: true
+      vitest:
+        optional: true
+    dependencies:
+      '@typescript-eslint/eslint-plugin': 5.62.0(@typescript-eslint/parser@5.62.0)(eslint@8.53.0)(typescript@5.2.2)
+      '@typescript-eslint/utils': 6.12.0(eslint@8.53.0)(typescript@5.2.2)
+      eslint: 8.53.0
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
     dev: true
 
   /eslint-scope@5.1.1:

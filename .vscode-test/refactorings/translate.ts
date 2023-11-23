@@ -9,9 +9,7 @@ refacTools.config({
   },
 })
 
-refacTools.runRefactor<{
-  variants: 'default' | 'ptToEn'
-}>(async (ctx) => {
+refacTools.runRefactor<'default' | 'ptToEn'>(async (ctx) => {
   const selectedCode = await ctx.activeEditor.getSelected()
 
   const textToTranslate =

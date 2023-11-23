@@ -59,7 +59,8 @@ function createOrUpdateApiDefinition() {
     declare type RefacToolsCtx<V extends RefactorProps = RefactorProps> =
       import('${importPath}').RefacToolsCtx<V>
   `
-  if (scriptsFolderUri) {
+
+  {
     const apiDefinitionPath = posix.join(scriptsFolderUri.path, 'refactools-api.d.ts')
 
     vscode.workspace.fs.writeFile(
@@ -123,7 +124,9 @@ async function getRefactoringsList(
         files: await vscode.workspace.fs.readDirectory(scriptsFolderUri),
         uri: scriptsFolderUri,
       })
-    } catch (e) {}
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   let availableRefactorings: {
@@ -134,17 +137,11 @@ async function getRefactoringsList(
   }[] = []
 
   type AvailableRefactoringsConfig = {
-    config: RefactorConfig
+    config: RefactorConfig<string>
     filename: string
     label: string
     rootDir: string
     variant: string
-    options: {
-      label: string
-      description: string | undefined
-      value: string
-      picked: boolean
-    }[]
     scope: 'user' | 'workspace'
   }
 
@@ -213,7 +210,7 @@ async function getRefactoringsList(
   try {
     const config = vm.runInNewContext(
       `[${availableRefactorings.map(({ configCode }) => configCode).join(',')}]`,
-    ) as RefactorConfig[]
+    ) as RefactorConfig<string>[]
 
     for (const [index, cfg] of config.entries()) {
       const enableCondition = cfg.enabledWhen
@@ -253,20 +250,6 @@ async function getRefactoringsList(
         label: cfg.name,
         variant: 'default',
         scope: notNullish(availableRefactorings[index]).scope,
-        options: [],
-      }
-
-      if (cfg.options) {
-        for (const [optionValue, option] of Object.entries(cfg.options)) {
-          if (!option.variants || option.variants.includes('default')) {
-            defaultVariant.options.push({
-              label: option.label,
-              description: option.description,
-              value: optionValue,
-              picked: !!option.default,
-            })
-          }
-        }
       }
 
       availableRefactoringsConfig.push(defaultVariant)
@@ -279,21 +262,6 @@ async function getRefactoringsList(
             continue
           }
 
-          let options: AvailableRefactoringsConfig['options'] = []
-
-          if (cfg.options) {
-            for (const [optionValue, option] of Object.entries(cfg.options)) {
-              if (!option.variants || option.variants.includes(variant)) {
-                options.push({
-                  label: option.label,
-                  description: option.description,
-                  value: optionValue,
-                  picked: !!option.default,
-                })
-              }
-            }
-          }
-
           availableRefactoringsConfig.push({
             config: cfg,
             filename: notNullish(availableRefactorings[index]).filename,
@@ -301,7 +269,6 @@ async function getRefactoringsList(
             variant,
             label: `${cfg.name} / ${name}`,
             scope: notNullish(availableRefactorings[index]).scope,
-            options,
           })
         }
       }
@@ -361,21 +328,6 @@ export function activate(context: vscode.ExtensionContext) {
       )
 
       if (!selectedRefactoring) return
-
-      let selectedOption: string | null = null
-
-      if (selectedRefactoring.options.length) {
-        selectedOption =
-          (
-            await vscode.window.showQuickPick(selectedRefactoring.options, {
-              title: 'Available options',
-              matchOnDescription: true,
-              placeHolder: 'Select an option',
-            })
-          )?.value ?? null
-
-        if (!selectedOption) return
-      }
 
       try {
         const bundledScript = await build({
@@ -452,7 +404,6 @@ export function activate(context: vscode.ExtensionContext) {
               memFs,
               refactoringEvents,
               selectedRefactoring.variant,
-              selectedOption,
               getActiveWorkspaceFolder(),
               progress,
               setHistoryValue,
@@ -467,7 +418,7 @@ export function activate(context: vscode.ExtensionContext) {
             const action = async () => {
               try {
                 await vm.runInNewContext(bundledScriptContent, {
-                  refacTools: refacTools,
+                  refacTools,
                   require,
                   global,
                   process,
@@ -524,7 +475,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
               }),
             ]).finally(() => {
-              resolveCancel?.()
+              resolveCancel()
               cleanup()
             })
           },
@@ -532,6 +483,7 @@ export function activate(context: vscode.ExtensionContext) {
       } catch (e) {
         const errorMsg = getErrorMessage(e)
         outputChannel.appendLine(`Error: ${errorMsg}`)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         outputChannel.append(e as any)
         vscode.window.showErrorMessage(
           `Error running refactoring. Please check the output for more details`,
@@ -550,7 +502,7 @@ export function activate(context: vscode.ExtensionContext) {
 function getErrorMessage(e: unknown): string {
   return (
     typeof e === 'string' ? e
-    : typeof e === 'object' && e && 'message' in e ? String(e?.message)
+    : typeof e === 'object' && e && 'message' in e ? String(e.message)
     : ''
   )
 }
