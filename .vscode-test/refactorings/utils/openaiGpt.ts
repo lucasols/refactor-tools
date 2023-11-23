@@ -187,7 +187,7 @@ export async function gptAskAboutCode({
           `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
           selectedCode &&
             `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
-          `\n\nAnswer with markdown syntax.`,
+          `\n\nRespond using markdown.`,
         ),
       },
       {
