@@ -120,7 +120,7 @@ export type RefacToolsCtx<Props extends RefactorProps> = {
       language?: string
       filename?: string
       editorGroup?: 'right' | 'current'
-    }) => void
+    }) => Promise<void>
     getEditor: (filePath: string) => EditorMethods | null
     openFile: (
       filePath: string,
