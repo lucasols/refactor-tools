@@ -96,12 +96,18 @@ async function getRefactoringsList(
   outputChannel: vscode.OutputChannel,
   mostUsedRefactorings: { [filename: string]: number },
 ) {
-  const folderToCheck: vscode.Uri[] = []
+  const folderToCheck: {
+    files: [filename: string, type: vscode.FileType][]
+    uri: vscode.Uri
+  }[] = []
 
   const userProjectFolder = getUserRefactoringsProjectUri()
 
   if (userProjectFolder) {
-    folderToCheck.push(userProjectFolder)
+    folderToCheck.push({
+      files: await vscode.workspace.fs.readDirectory(userProjectFolder),
+      uri: userProjectFolder,
+    })
   }
 
   const activeWorkspaceFolder = getActiveWorkspaceFolder()
@@ -111,7 +117,13 @@ async function getRefactoringsList(
   })
 
   if (scriptsFolderUri) {
-    folderToCheck.push(scriptsFolderUri)
+    // check if the folder exists
+    try {
+      folderToCheck.push({
+        files: await vscode.workspace.fs.readDirectory(scriptsFolderUri),
+        uri: scriptsFolderUri,
+      })
+    } catch (e) {}
   }
 
   let availableRefactorings: {
@@ -141,11 +153,9 @@ async function getRefactoringsList(
   const addedRefactorings = new Set<string>()
 
   for (const projectFolder of folderToCheck) {
-    for (const [filename, type] of await vscode.workspace.fs.readDirectory(
-      projectFolder,
-    )) {
+    for (const [filename, type] of projectFolder.files) {
       if (type === vscode.FileType.File) {
-        const filePath = posix.join(projectFolder.path, filename)
+        const filePath = posix.join(projectFolder.uri.path, filename)
 
         const fileExtension = posix.extname(filePath)
 
@@ -158,7 +168,7 @@ async function getRefactoringsList(
         }
 
         const fileContent = await vscode.workspace.fs.readFile(
-          projectFolder.with({ path: filePath }),
+          projectFolder.uri.with({ path: filePath }),
         )
 
         const fileContentString = fileContent.toString()
@@ -185,8 +195,8 @@ async function getRefactoringsList(
         availableRefactorings.push({
           configCode,
           filename,
-          rootDir: projectFolder.path,
-          scope: projectFolder === userProjectFolder ? 'user' : 'workspace',
+          rootDir: projectFolder.uri.path,
+          scope: projectFolder.uri === userProjectFolder ? 'user' : 'workspace',
         })
       }
     }
