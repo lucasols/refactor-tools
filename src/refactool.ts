@@ -13,6 +13,18 @@ type LanguageId =
   | 'typescriptreact'
   | 'json'
   | 'markdown'
+  | 'html'
+  | 'css'
+  | 'scss'
+  | 'python'
+  | 'java'
+  | 'csharp'
+  | 'cpp'
+  | 'c'
+  | 'go'
+  | 'ruby'
+  | 'php'
+  | 'perl'
   | (string & {})
 
 type Option = {
@@ -318,12 +330,6 @@ export async function initializeCtx(
       (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
     )
 
-    // format entire diff editor
-    if (diffEditor) {
-      await vscode.commands.executeCommand('editor.action.formatDocument')
-      await diffEditor.document.save()
-    }
-
     const userResponse = defer<string | false>()
 
     const dispose = vscode.commands.registerCommand(
@@ -458,8 +464,6 @@ export async function initializeCtx(
       },
       format: async () => {
         if (isCancelled) return
-
-        const editor = await getEditor()
 
         vscode.commands.executeCommand('editor.action.formatDocument')
       },
