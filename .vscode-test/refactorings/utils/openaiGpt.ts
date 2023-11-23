@@ -48,7 +48,7 @@ export async function gptTransform({
             prompt,
           )}"`,
           returnExplanation ?
-            `, and return the output along with an explanation of your reasoning.`
+            `, and return the output along with an explanation of your reasoning in markdown.`
           : `, and return ONLY the output.`,
           examples && examples.length > 0 ?
             `\nConsider the following references for your task:\n${examples

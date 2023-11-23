@@ -18,5 +18,5 @@ refacTools.runRefactor(async (ctx) => {
     returnExplanation: true,
   })
 
-  await ctx.fs.createTempFile('txt', translatedText).openEditor('right')
+  await ctx.fs.createTempFile('md', translatedText).openEditor('right')
 })
