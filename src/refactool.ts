@@ -329,11 +329,7 @@ export async function initializeCtx(
     const dispose = vscode.commands.registerCommand(
       'refactools.acceptRefactoring',
       () => {
-        userResponse.resolve(
-          typeof original === 'string' ? refactored : (
-            memFs.readFile(virtualRefactoredFileUri).toString()
-          ),
-        )
+        userResponse.resolve(diffEditor?.document.getText() ?? false)
       },
     )
 
@@ -353,6 +349,7 @@ export async function initializeCtx(
     previewIsClosedDispose.dispose()
 
     if (diffEditor) {
+      await diffEditor.document.save()
       await vscode.window.showTextDocument(diffEditor.document)
       vscode.commands.executeCommand('workbench.action.closeActiveEditor')
     }

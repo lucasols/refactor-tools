@@ -267,8 +267,9 @@ function logUsage(
   refacTools.log(
     `OpenAI took ${formatNum(
       elapsed / 1000,
-    )}s using model "${model}".\nTokens used:\n  Prompt:${response.usage
-      ?.prompt_tokens}\n  Completion:${response.usage?.completion_tokens}`,
+    )}s using model "${model}".\nTokens used:\n  Prompt: ${response.usage
+      ?.prompt_tokens}\n  Completion: ${response.usage
+      ?.completion_tokens}\n Total: ${response.usage?.total_tokens}`,
   )
 }
 
