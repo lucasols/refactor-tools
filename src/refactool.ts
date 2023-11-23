@@ -335,7 +335,6 @@ export function initializeCtx(
     previewIsClosedDispose.dispose()
 
     if (diffEditor) {
-      await diffEditor.document.save()
       await vscode.window.showTextDocument(diffEditor.document)
       vscode.commands.executeCommand('workbench.action.closeActiveEditor')
     }
