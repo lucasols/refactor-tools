@@ -345,7 +345,7 @@ export function initializeCtx(
 
     if (typeof refactored !== 'string') {
       setGeneralProgress.report({
-        message: generatingDiffMessage ?? 'Generating diff...',
+        message: generatingDiffMessage ?? '🛠️ Generating diff...',
       })
 
       for await (const refactoredChunk of refactored) {
@@ -359,7 +359,9 @@ export function initializeCtx(
         )
       }
 
-      setGeneralProgress.report({ message: generatingDiffCompleteMessage })
+      setGeneralProgress.report({
+        message: generatingDiffCompleteMessage ?? '✅ Diff generated',
+      })
     }
 
     const diffEditor = vscode.window.visibleTextEditors.find(
@@ -386,6 +388,8 @@ export function initializeCtx(
     })
 
     const result = await userResponse.promise
+
+    setGeneralProgress.report({ message: undefined })
 
     dispose.dispose()
     previewIsClosedDispose.dispose()
