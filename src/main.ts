@@ -354,7 +354,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: `Running refactoring ${selectedRefactoring.config.name}`,
+            title: `Running: ${selectedRefactoring.config.name}`,
             cancellable: true,
           },
           async (progress, token) => {
