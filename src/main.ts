@@ -451,7 +451,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
 
                 vscode.window.showErrorMessage(
-                  `Error running refactoring. Please check the output for more details`,
+                  `Error running refactoring: ${errorMsg}. Please check the output for more details`,
                 )
               }
 

@@ -5,6 +5,21 @@ export async function simpleRefactor(
   ctx: RefacToolsCtx<'quickReplace'>,
   useGpt3?: boolean,
 ) {
+  const modelToUse =
+    useGpt3 ? 'useGpt3' : (
+      await ctx.prompt.quickPick({
+        options: [
+          { label: 'Use GPT-3', value: 'useGpt3' },
+          { label: 'Use GPT-4', value: 'useGpt4' },
+        ],
+        title: 'Select GPT model',
+      })
+    )
+
+  if (!modelToUse) {
+    return
+  }
+
   const selectedCode = await ctx.activeEditor.getSelected()
 
   if (!selectedCode) {
@@ -15,7 +30,7 @@ export async function simpleRefactor(
     instructions: instructions,
     oldCode: selectedCode.text,
     language: selectedCode.language,
-    useGpt3,
+    useGpt3: modelToUse === 'useGpt3',
   })
 
   if (ctx.variant === 'quickReplace') {
