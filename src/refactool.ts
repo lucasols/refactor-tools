@@ -240,6 +240,12 @@ export function initializeCtx(
     return
   }
 
+  function getEditorByUri(uri: string) {
+    return vscode.window.visibleTextEditors.find(
+      (editor) => editor.document.uri.toString() === uri,
+    )
+  }
+
   async function focusEditor(editor: vsc.TextEditor | undefined) {
     if (editor) {
       await vscode.window.showTextDocument(editor.document)
@@ -281,10 +287,10 @@ export function initializeCtx(
     let originalFileContent: string | null = null
 
     if (typeof original !== 'string') {
-      if ('editor' in original) {
-        try {
-          originalFileContent = await original.editor.getContent(true)
-        } catch (err) {}
+      const originalEditor = getEditorByUri(leftUri.toString())
+
+      if (originalEditor) {
+        originalFileContent = originalEditor.document.getText()
       }
 
       if (!originalFileContent) {
