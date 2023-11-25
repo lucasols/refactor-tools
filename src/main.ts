@@ -493,7 +493,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('refactools.updateWorkspaceApiTypes', async () => {
+    vscode.commands.registerCommand('refactools.updateWorkspaceApiTypes', () => {
       createOrUpdateApiDefinition()
     }),
   )

@@ -89,14 +89,7 @@ function escapeDoubleQuotes(str: string) {
 
 const tripleBacktick = '```'
 
-export async function gptCodeRefactor({
-  instructions,
-  oldCode,
-  language,
-  examples,
-  useGpt3,
-  maxTokens = 4096,
-}: {
+type CodeRefactorProps = {
   instructions: string
   language: string
   examples?: {
@@ -106,7 +99,16 @@ export async function gptCodeRefactor({
   oldCode: string
   useGpt3?: boolean
   maxTokens?: number
-}): Promise<string> {
+}
+
+export async function gptCodeRefactor({
+  instructions,
+  oldCode,
+  language,
+  examples,
+  useGpt3,
+  maxTokens = 4096,
+}: CodeRefactorProps): Promise<string> {
   const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
 
   const startTimestamp = Date.now()
@@ -114,6 +116,7 @@ export async function gptCodeRefactor({
   const response = await openai.chat.completions.create({
     model,
     max_tokens: maxTokens,
+    stop: 'NOT_APPLICABLE',
     messages: [
       {
         role: 'system',
@@ -161,13 +164,98 @@ export async function gptCodeRefactor({
   return responseCode
 }
 
-export async function gptAskAboutCode({
+const removeMarkdownMultilineCodeRegex = /^```.*$/gm
+
+export async function* gptCodeRefactorStream({
+  instructions,
+  oldCode,
+  language,
+  examples,
+  useGpt3,
+  maxTokens = 4096,
+  onCancel,
+}: CodeRefactorProps & { onCancel: RefacToolsCtx['onCancel'] }): AsyncGenerator<string> {
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+
+  const responseStream = await openai.chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    stream: true,
+    stop: 'NOT_APPLICABLE',
+    messages: [
+      {
+        role: 'system',
+        content: generateCodePrompt(language, instructions, examples),
+      },
+      {
+        role: 'user',
+        content: `${tripleBacktick}\n${oldCode}\n${tripleBacktick}`,
+      },
+    ],
+  })
+
+  onCancel(() => {
+    responseStream.controller.abort()
+  })
+
+  let response = ''
+
+  const { shouldYield } = throttledYield(1000)
+
+  for await (const chunk of responseStream) {
+    const firstChoice = chunk.choices[0]
+
+    if (!firstChoice) {
+      throw new Error('No response from OpenAI')
+    }
+
+    if (firstChoice.finish_reason === 'stop') {
+      yield response.replace(removeMarkdownMultilineCodeRegex, '')
+      break
+    }
+
+    if (firstChoice.finish_reason) {
+      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
+    }
+
+    response += firstChoice.delta.content || ''
+
+    if (shouldYield()) {
+      yield response.replace(removeMarkdownMultilineCodeRegex, '')
+    }
+  }
+}
+
+function throttledYield(ms: number): {
+  shouldYield: () => boolean
+} {
+  let lastYield = Date.now()
+
+  function shouldYield() {
+    const now = Date.now()
+
+    if (now - lastYield > ms) {
+      lastYield = now
+
+      return true
+    }
+
+    return false
+  }
+
+  return {
+    shouldYield,
+  }
+}
+
+export async function* gptAskAboutCode({
   question,
   contextCode,
   useGpt3,
   selectedCode,
   language,
   maxTokens = 4096,
+  onCancel,
 }: {
   question: string
   language: string
@@ -175,19 +263,19 @@ export async function gptAskAboutCode({
   contextCode: string
   useGpt3?: boolean
   maxTokens?: number
-}): Promise<string> {
+  onCancel: RefacToolsCtx['onCancel']
+}): AsyncGenerator<string> {
   const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
 
-  const startTimestamp = Date.now()
-
-  const response = await openai.chat.completions.create({
+  const responseStream = await openai.chat.completions.create({
     model,
     max_tokens: maxTokens,
+    stream: true,
     messages: [
       {
         role: 'system',
         content: joinStrings(
-          `You is a programmer expert for the language ${language}. Your task is to answer the questions about the following code as context:`,
+          `You is a programmer expert for the language ${language}. Your task is to answer the questions or instructions about the following code as context:`,
           `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
           selectedCode &&
             `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
@@ -201,21 +289,31 @@ export async function gptAskAboutCode({
     ],
   })
 
-  const elapsed = Date.now() - startTimestamp
+  let response = ''
 
-  logUsage(elapsed, model, response)
+  onCancel(() => {
+    responseStream.controller.abort()
+  })
 
-  const firstChoice = response.choices[0]
+  for await (const chunk of responseStream) {
+    const firstChoice = chunk.choices[0]
 
-  if (firstChoice?.finish_reason !== 'stop') {
-    throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
+    if (!firstChoice) {
+      throw new Error('No response from OpenAI')
+    }
+
+    if (firstChoice.finish_reason === 'stop') {
+      break
+    }
+
+    if (firstChoice.finish_reason) {
+      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
+    }
+
+    response += firstChoice.delta.content || ''
+
+    yield response
   }
-
-  if (!firstChoice.message.content) {
-    throw new Error('No response from OpenAI')
-  }
-
-  return firstChoice.message.content
 }
 
 export async function gptGenericPrompt({

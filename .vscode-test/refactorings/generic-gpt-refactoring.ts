@@ -1,4 +1,4 @@
-import { gptCodeRefactor } from './utils/openaiGpt'
+import { gptCodeRefactor, gptCodeRefactorStream } from './utils/openaiGpt'
 
 type Variants = 'quickReplace' | 'withLastInstruction'
 
@@ -45,26 +45,37 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     throw new Error('No instructions provided')
   }
 
-  const refactoredCode = await gptCodeRefactor({
-    instructions: instructions,
-    oldCode: selectedCode.text,
-    language: selectedCode.language,
-    useGpt3: modelToUse === 'useGpt3',
-  })
+  if (ctx.variant === 'quickReplace') {
+    const refactoredCode = await gptCodeRefactor({
+      instructions,
+      oldCode: selectedCode.text,
+      language: selectedCode.language,
+      useGpt3: modelToUse === 'useGpt3',
+    })
 
-  if (ctx.variant === 'quickReplace' || ctx.variant === 'withLastInstruction') {
     await selectedCode.replaceWith(refactoredCode)
 
     return
   }
 
+  const refactoredCode = gptCodeRefactorStream({
+    instructions,
+    oldCode: selectedCode.text,
+    language: selectedCode.language,
+    useGpt3: modelToUse === 'useGpt3',
+    onCancel: ctx.onCancel,
+  })
+
   const acceptedRefactoredCode = await ctx.showDiff({
     original: selectedCode,
     refactored: refactoredCode,
     ext: ctx.activeEditor.extension,
+    generatingDiffMessage: '🛠️ Refactoring...',
   })
 
   if (acceptedRefactoredCode) {
     await ctx.activeEditor.setContent(acceptedRefactoredCode)
+
+    await ctx.activeEditor.format()
   }
 })

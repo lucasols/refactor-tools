@@ -68,6 +68,7 @@ type EditorMethods = {
   language: LanguageId
   extension: string
   getContent: (throwIfClosed?: boolean) => Thenable<string>
+  openMarkdownPreview: () => Promise<void>
 }
 
 type Selected = {
@@ -82,7 +83,7 @@ type Selected = {
 }
 
 export type RefacToolsCtx<V extends string> = {
-  variant: V
+  variant: V | 'default'
   history: {
     getLast: () => {
       get: <T>(key: string) => T | undefined
@@ -101,7 +102,7 @@ export type RefacToolsCtx<V extends string> = {
       language?: string
       filename?: string
       editorGroup?: 'right' | 'current'
-    }) => Promise<void>
+    }) => Promise<EditorMethods>
     getEditor: (filePath: string) => EditorMethods | null
     openFile: (
       filePath: string,
@@ -173,7 +174,9 @@ export type RefacToolsCtx<V extends string> = {
   showDiff: (props: {
     title?: string
     original: string | Selected | { editor: EditorMethods; replaceAtOffset: number }
-    refactored: string
+    refactored: string | AsyncGenerator<string>
+    generatingDiffMessage?: string
+    generatingDiffCompleteMessage?: string
     ext?: string
   }) => Promise<string | false>
   onCancel: (fn: () => void) => void
@@ -252,6 +255,8 @@ export function initializeCtx(
     original,
     refactored,
     ext: _ext,
+    generatingDiffCompleteMessage,
+    generatingDiffMessage,
   }) => {
     throwIfCancelled()
 
@@ -273,11 +278,9 @@ export function initializeCtx(
       `refactoolsfs:/diff.refactored${ext}`,
     )
 
-    let refactoredFile = refactored
+    let originalFileContent: string | null = null
 
     if (typeof original !== 'string') {
-      let originalFileContent: string | null = null
-
       if ('editor' in original) {
         try {
           originalFileContent = await original.editor.getContent(true)
@@ -287,24 +290,42 @@ export function initializeCtx(
       if (!originalFileContent) {
         originalFileContent = (await vscode.workspace.fs.readFile(leftUri)).toString()
       }
-
-      if ('replaceAtOffset' in original) {
-        refactoredFile =
-          originalFileContent.slice(0, original.replaceAtOffset) +
-          refactored +
-          originalFileContent.slice(original.replaceAtOffset)
-      } else {
-        refactoredFile =
-          originalFileContent.slice(0, original.range.start) +
-          refactored +
-          originalFileContent.slice(original.range.end)
-      }
     }
 
-    memFs.writeFile(virtualRefactoredFileUri, Buffer.from(refactoredFile), {
-      create: true,
-      overwrite: false,
-    })
+    function getRefactoredFileContent(content: string): string {
+      let refactoredFile = content
+
+      if (!originalFileContent) {
+        return refactoredFile
+      }
+
+      if (typeof original !== 'string') {
+        if ('replaceAtOffset' in original) {
+          refactoredFile =
+            originalFileContent.slice(0, original.replaceAtOffset) +
+            content +
+            originalFileContent.slice(original.replaceAtOffset)
+        } else {
+          refactoredFile =
+            originalFileContent.slice(0, original.range.start) +
+            content +
+            originalFileContent.slice(original.range.end)
+        }
+      }
+
+      return refactoredFile
+    }
+
+    memFs.writeFile(
+      virtualRefactoredFileUri,
+      Buffer.from(
+        getRefactoredFileContent(typeof refactored === 'string' ? refactored : ''),
+      ),
+      {
+        create: true,
+        overwrite: true,
+      },
+    )
 
     await vscode.commands.executeCommand(
       'vscode.diff',
@@ -315,6 +336,25 @@ export function initializeCtx(
         preview: true,
       },
     )
+
+    if (typeof refactored !== 'string') {
+      setGeneralProgress.report({
+        message: generatingDiffMessage ?? 'Generating diff...',
+      })
+
+      for await (const refactoredChunk of refactored) {
+        memFs.writeFile(
+          virtualRefactoredFileUri,
+          Buffer.from(getRefactoredFileContent(refactoredChunk)),
+          {
+            create: true,
+            overwrite: true,
+          },
+        )
+      }
+
+      setGeneralProgress.report({ message: generatingDiffCompleteMessage })
+    }
 
     const diffEditor = vscode.window.visibleTextEditors.find(
       (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
@@ -455,6 +495,11 @@ export function initializeCtx(
 
           editBuilder.replace(fullRange, content)
         })
+      },
+      openMarkdownPreview: async () => {
+        if (isCancelled) return
+
+        await vscode.commands.executeCommand('markdown.showPreview', editorUri)
       },
       format: async () => {
         if (isCancelled) return
@@ -712,9 +757,13 @@ export function initializeCtx(
           content,
         })
 
-        await vscode.window.showTextDocument(
-          editor,
-          editorGroup === 'current' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
+        return getEditorMethods(
+          await vscode.window.showTextDocument(
+            editor,
+            editorGroup === 'current' ?
+              vscode.ViewColumn.Active
+            : vscode.ViewColumn.Beside,
+          ),
         )
       },
       getEditor: (filePath) => {
@@ -981,7 +1030,9 @@ export const refacTools = {
   log,
 }
 
-async function runRefactor<V extends string = string>(fn: RefactorFn<V>): Promise<void> {
+async function runRefactor<V extends string = string>(
+  fn: RefactorFn<V | 'default'>,
+): Promise<void> {
   if (!refactorCtx) {
     throw new Error('Refactor context not set')
   }

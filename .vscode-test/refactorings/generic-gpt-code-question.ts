@@ -1,9 +1,9 @@
-import { gptAskAboutCode, gptCodeRefactor } from './utils/openaiGpt'
+import { gptAskAboutCode } from './utils/openaiGpt'
 
 type Variants = 'useGpt4' | 'useGpt3'
 
 refacTools.config<Variants>({
-  name: 'Generic GPT question about selected code',
+  name: 'Ask about code',
   enabledWhen: {
     hasSelection: true,
   },
@@ -36,16 +36,23 @@ refacTools.runRefactor<Variants>(async (ctx) => {
 
   const selectedText = selectedCode.text
 
-  const mdResponse = await gptAskAboutCode({
+  const editor = await ctx.ide.newUnsavedFile({
+    language: 'markdown',
+    content: '',
+    editorGroup: 'right',
+  })
+
+  await editor.openMarkdownPreview()
+
+  const mdResponse = gptAskAboutCode({
     question: instructions,
     contextCode: selectedText,
     language: ctx.activeEditor.language,
     useGpt3: modelToUse === 'useGpt3',
+    onCancel: ctx.onCancel,
   })
 
-  await ctx.ide.newUnsavedFile({
-    language: 'markdown',
-    content: mdResponse,
-    editorGroup: 'right',
-  })
+  for await (const partialResponse of mdResponse) {
+    await editor.setContent(partialResponse)
+  }
 })

@@ -1,4 +1,4 @@
-import { gptCodeRefactor } from './openaiGpt'
+import { gptCodeRefactor, gptCodeRefactorStream } from './openaiGpt'
 
 export async function simpleRefactor(
   instructions: string,
@@ -26,23 +26,32 @@ export async function simpleRefactor(
     throw new Error('No code selected')
   }
 
-  const refactoredCode = await gptCodeRefactor({
-    instructions: instructions,
-    oldCode: selectedCode.text,
-    language: selectedCode.language,
-    useGpt3: modelToUse === 'useGpt3',
-  })
-
   if (ctx.variant === 'quickReplace') {
+    const refactoredCode = await gptCodeRefactor({
+      instructions,
+      oldCode: selectedCode.text,
+      language: selectedCode.language,
+      useGpt3: modelToUse === 'useGpt3',
+    })
+
     await selectedCode.replaceWith(refactoredCode)
 
     return
   }
 
+  const refactoredCode = gptCodeRefactorStream({
+    instructions,
+    oldCode: selectedCode.text,
+    language: selectedCode.language,
+    useGpt3: modelToUse === 'useGpt3',
+    onCancel: ctx.onCancel,
+  })
+
   const acceptedRefactoredCode = await ctx.showDiff({
     original: selectedCode,
     refactored: refactoredCode,
     ext: ctx.activeEditor.extension,
+    generatingDiffMessage: '🛠️ Refactoring...',
   })
 
   if (acceptedRefactoredCode) {
