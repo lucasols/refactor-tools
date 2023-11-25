@@ -3,7 +3,7 @@ import { simpleRefactor } from './utils/simpleRefactor'
 type Variants = 'quickReplace'
 
 refacTools.config<Variants>({
-  name: 'Fix syntax errors',
+  name: 'Simplify code',
   variants: {
     quickReplace: 'Quick Replace',
   },
@@ -13,5 +13,5 @@ refacTools.config<Variants>({
 })
 
 refacTools.runRefactor<Variants>(async (ctx) => {
-  await simpleRefactor('Fix syntax errors', ctx)
+  await simpleRefactor('Symplify the code', ctx)
 })

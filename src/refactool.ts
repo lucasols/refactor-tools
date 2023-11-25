@@ -67,7 +67,7 @@ type EditorMethods = {
   editorUri: vsc.Uri
   language: LanguageId
   extension: string
-  getContent: () => Thenable<string>
+  getContent: (throwIfClosed?: boolean) => Thenable<string>
 }
 
 type Selected = {
@@ -276,7 +276,17 @@ export function initializeCtx(
     let refactoredFile = refactored
 
     if (typeof original !== 'string') {
-      const originalFileContent = (await vscode.workspace.fs.readFile(leftUri)).toString()
+      let originalFileContent: string | null = null
+
+      if ('editor' in original) {
+        try {
+          originalFileContent = await original.editor.getContent(true)
+        } catch (err) {}
+      }
+
+      if (!originalFileContent) {
+        originalFileContent = (await vscode.workspace.fs.readFile(leftUri)).toString()
+      }
 
       if ('replaceAtOffset' in original) {
         refactoredFile =
@@ -334,8 +344,13 @@ export function initializeCtx(
     dispose.dispose()
     previewIsClosedDispose.dispose()
 
-    if (diffEditor) {
-      await vscode.window.showTextDocument(diffEditor.document)
+    const openedDiffEditor = vscode.window.visibleTextEditors.find(
+      (editor) => editor.document.uri.toString() === virtualRefactoredFileUri.toString(),
+    )
+
+    if (openedDiffEditor) {
+      await vscode.window.showTextDocument(openedDiffEditor.document)
+      await openedDiffEditor.document.save()
       vscode.commands.executeCommand('workbench.action.closeActiveEditor')
     }
 
@@ -357,12 +372,16 @@ export function initializeCtx(
   function getEditorMethods(_editor: vsc.TextEditor): EditorMethods {
     const editorUri = _editor.document.uri
 
-    const getEditor = async () => {
+    const getEditor = async (throwIfClosed?: boolean) => {
       const editor = vscode.window.visibleTextEditors.find(
         (editor) => editor.document.uri.toString() === editorUri.toString(),
       )
 
       if (!editor) {
+        if (throwIfClosed) {
+          throw new Error('Editor closed')
+        }
+
         return await vscode.window.showTextDocument(
           await vscode.workspace.openTextDocument(editorUri),
         )
@@ -468,8 +487,8 @@ export function initializeCtx(
       },
       filename: _editor.document.fileName,
       filepath: _editor.document.uri.fsPath,
-      getContent: async () => {
-        const editor = await getEditor()
+      getContent: async (throwIfClosed) => {
+        const editor = await getEditor(throwIfClosed)
 
         return editor.document.getText()
       },

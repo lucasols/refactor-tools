@@ -64,6 +64,7 @@ const config = {
       ERROR_IN_CI,
       { disallowTemplateShorthand: true, allow: ['!!'] },
     ],
+    'no-empty': [ERROR_IN_CI, { allowEmptyCatch: true }],
 
     /* typescript */
     '@typescript-eslint/no-unnecessary-condition': ERROR_IN_CI,

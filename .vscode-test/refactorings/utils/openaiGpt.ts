@@ -38,13 +38,13 @@ export async function gptTransform({
   const startTimestamp = Date.now()
 
   const response = await openai.chat.completions.create({
-    model: model,
+    model,
     max_tokens: maxTokens,
     messages: [
       {
         role: 'system',
         content: joinStrings(
-          `You will be provided with only inputs. Your task is to convert them according to the instruction: "${escapeDoubleQuotes(
+          `You is a text smart transformer. You will be provided with only inputs. Your task is to convert them according to the instruction: "${escapeDoubleQuotes(
             prompt,
           )}"`,
           returnExplanation ?
@@ -76,7 +76,7 @@ export async function gptTransform({
     throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
   }
 
-  if (!firstChoice?.message.content) {
+  if (!firstChoice.message.content) {
     throw new Error('No response from OpenAI')
   }
 
@@ -112,7 +112,7 @@ export async function gptCodeRefactor({
   const startTimestamp = Date.now()
 
   const response = await openai.chat.completions.create({
-    model: model,
+    model,
     max_tokens: maxTokens,
     messages: [
       {
@@ -136,18 +136,22 @@ export async function gptCodeRefactor({
     throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
   }
 
-  if (!firstChoice?.message.content) {
+  if (!firstChoice.message.content) {
     throw new Error('No response from OpenAI')
   }
 
   const responseCode = firstChoice.message.content
+
+  if (responseCode.includes('NOT_APPLICABLE')) {
+    throw new Error('The instruction is not applicable to the code')
+  }
 
   if (responseCode.startsWith(tripleBacktick)) {
     const match = responseCode.match(extractCodeRegex)
 
     if (!match?.[2]) {
       throw new Error(
-        'Could not extract code from response, full response:\n' + responseCode,
+        `Could not extract code from response, full response:\n${responseCode}`,
       )
     }
 
@@ -177,7 +181,7 @@ export async function gptAskAboutCode({
   const startTimestamp = Date.now()
 
   const response = await openai.chat.completions.create({
-    model: model,
+    model,
     max_tokens: maxTokens,
     messages: [
       {
@@ -207,7 +211,7 @@ export async function gptAskAboutCode({
     throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
   }
 
-  if (!firstChoice?.message.content) {
+  if (!firstChoice.message.content) {
     throw new Error('No response from OpenAI')
   }
 
@@ -228,7 +232,7 @@ export async function gptGenericPrompt({
   const startTimestamp = Date.now()
 
   const response = await openai.chat.completions.create({
-    model: model,
+    model,
     max_tokens: maxTokens,
     messages: [
       {
@@ -252,7 +256,7 @@ export async function gptGenericPrompt({
     throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
   }
 
-  if (!firstChoice?.message.content) {
+  if (!firstChoice.message.content) {
     throw new Error('No response from OpenAI')
   }
 
@@ -279,9 +283,9 @@ function generateCodePrompt(
   examples: { old: string; refactored: string }[] | undefined,
 ): string | null {
   return joinStrings(
-    `You will be provided with only ${language} code inputs inside markdown, like ${tripleBacktick}input code${tripleBacktick}. Your task is to refactor them according to the instruction: "${escapeDoubleQuotes(
+    `You is a programming refactor expert. You will be provided with only ${language} code inputs inside markdown, like ${tripleBacktick}input code${tripleBacktick}. Your task is to refactor them according to the instruction: "${escapeDoubleQuotes(
       instructions,
-    )}", and return ONLY the resulting code.`,
+    )}", and return ONLY the resulting code. If the instruction cannot be followed, return just NOT_APPLICABLE.`,
     examples &&
       examples.length > 0 &&
       `\n\nConsider the following references for your task:\n\n${examples

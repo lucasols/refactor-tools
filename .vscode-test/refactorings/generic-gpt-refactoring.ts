@@ -16,8 +16,8 @@ refacTools.config<Variants>({
 refacTools.runRefactor<Variants>(async (ctx) => {
   const modelToUse = await ctx.prompt.quickPick({
     options: [
-      { label: 'Use GPT-4', value: 'useGpt4' },
       { label: 'Use GPT-3', value: 'useGpt3' },
+      { label: 'Use GPT-4', value: 'useGpt4' },
     ],
     title: 'Select GPT model',
   })
