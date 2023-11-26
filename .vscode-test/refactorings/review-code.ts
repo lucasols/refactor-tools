@@ -9,5 +9,8 @@ refacTools.config({
 })
 
 refacTools.runRefactor(async (ctx) => {
-  await simpleCodeQuestion(`Review the code focusing on finding potential problems, split your response in very obvious problems, possible problems and suggestions. Remember that you may be reviewing only a part of the code, so be optimitic about the code you don't have contex`, ctx)
+  await simpleCodeQuestion(
+    `Review the code with a focus on identifying potential problems. Split your response into 'very obvious problems', 'possible problems' and 'suggestions' Remember that you might be reviewing only a part of the code, so be optimistic about the code for which you don't have context.`,
+    ctx,
+  )
 })
