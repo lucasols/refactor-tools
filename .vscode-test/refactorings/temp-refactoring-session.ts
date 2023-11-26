@@ -1,4 +1,3 @@
-import { dedent } from './utils/dedent'
 import { gptCodeRefactorStream } from './utils/openaiGpt'
 import { joinStrings } from './utils/stringUtils'
 
@@ -42,6 +41,11 @@ refacTools.runRefactor(async (ctx) => {
       return false
     }
 
+    if (exampleOriginal.text === exampleRefactored.text) {
+      ctx.ide.showErrorMessage('The original and refactored code are the same')
+      return false
+    }
+
     examples.push({ old: exampleOriginal.text, refactored: exampleRefactored.text })
 
     return true
@@ -61,6 +65,7 @@ refacTools.runRefactor(async (ctx) => {
         'Add more examples',
         'Remove last example',
         'Add extra instructions',
+        'Show examples',
       ],
     )
 
@@ -126,6 +131,20 @@ refacTools.runRefactor(async (ctx) => {
 
         await originalEditor.format()
       }
+
+      return awaiNextAction()
+    }
+
+    if (nextAction === 'Show examples') {
+      await ctx.ide.newUnsavedFile({
+        language: 'markdown',
+        content: examples
+          .map(
+            (example) =>
+              `### Original\n\n\`\`\`\n${example.old}\n\`\`\`\n\n### Refactored\n\n\`\`\`\n${example.refactored}\n\`\`\``,
+          )
+          .join('\n\n'),
+      })
 
       return awaiNextAction()
     }

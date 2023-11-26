@@ -444,31 +444,7 @@ export function initializeCtx(
 
         await focusEditor(editor)
 
-        if (editor.selection.isEmpty) {
-          return null
-        }
-
-        const text = editor.document.getText(editor.selection)
-
-        return {
-          text,
-          language: editor.document.languageId as LanguageId,
-          range: {
-            start: editor.document.offsetAt(editor.selection.start),
-            end: editor.document.offsetAt(editor.selection.end),
-          },
-          getEditor: async () => {
-            return getEditorMethods(await getEditor())
-          },
-          editorUri: editor.document.uri,
-          replaceWith: async (code: string) => {
-            const edtr = await getEditor()
-
-            await edtr.edit((editBuilder) => {
-              editBuilder.replace(edtr.selection, code)
-            })
-          },
-        }
+        return getSelectionFromEditor(editor, getEditorMethods, getEditor)
       }
     return {
       getSelected,
@@ -673,15 +649,15 @@ export function initializeCtx(
           return false
         }
 
-        const selectedText = await getEditorMethods(
-          vscode.window.activeTextEditor!,
-        ).getSelected()
+        if (!vscode.window.activeTextEditor) return false
 
-        if (!selectedText) {
-          return false
-        }
+        const selection = getSelectionFromEditor(
+          vscode.window.activeTextEditor,
+          getEditorMethods,
+          () => Promise.resolve(vscode.window.activeTextEditor!),
+        )
 
-        return selectedText
+        return selection || false
       },
       async dialog(message, buttons) {
         throwIfCancelled()
@@ -1010,6 +986,38 @@ export function initializeCtx(
     },
     activeEditor: getEditorMethods(initialActiveEditor),
     showDiff,
+  }
+}
+
+function getSelectionFromEditor(
+  editor: vsc.TextEditor,
+  getEditorMethods: (_editor: vsc.TextEditor) => EditorMethods,
+  getEditor: (throwIfClosed?: boolean) => Promise<vsc.TextEditor>,
+): Selected | null {
+  if (editor.selection.isEmpty) {
+    return null
+  }
+
+  const text = editor.document.getText(editor.selection)
+
+  return {
+    text,
+    language: editor.document.languageId as LanguageId,
+    range: {
+      start: editor.document.offsetAt(editor.selection.start),
+      end: editor.document.offsetAt(editor.selection.end),
+    },
+    getEditor: async () => {
+      return getEditorMethods(await getEditor())
+    },
+    editorUri: editor.document.uri,
+    replaceWith: async (code: string) => {
+      const edtr = await getEditor()
+
+      await edtr.edit((editBuilder) => {
+        editBuilder.replace(edtr.selection, code)
+      })
+    },
   }
 }
 
