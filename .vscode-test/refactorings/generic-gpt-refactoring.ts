@@ -1,12 +1,11 @@
 import { gptCodeRefactor, gptCodeRefactorStream } from './utils/openaiGpt'
 
-type Variants = 'quickReplace' | 'withLastInstruction'
+type Variants = 'quickReplace'
 
 refacTools.config<Variants>({
   name: 'Generic GPT Refactoring',
   variants: {
     quickReplace: 'Quick Replace',
-    withLastInstruction: 'With Last Instruction',
   },
   enabledWhen: {
     hasSelection: true,
@@ -32,12 +31,9 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     throw new Error('No code selected')
   }
 
-  const lastInstruction =
-    ctx.variant === 'withLastInstruction' &&
-    ctx.history.getLast()?.get<string>('lastInstruction')
+  const lastInstruction = ctx.history.getLast()?.get<string>('lastInstruction')
 
-  const instructions =
-    lastInstruction ? lastInstruction : await ctx.prompt.text('Refactoring instructions')
+  const instructions = await ctx.prompt.text('Refactoring instructions', lastInstruction)
 
   ctx.history.add('lastInstruction', instructions)
 

@@ -295,6 +295,8 @@ export async function* gptAskAboutCode({
     responseStream.controller.abort()
   })
 
+  const { shouldYield } = throttledYield(1000)
+
   for await (const chunk of responseStream) {
     const firstChoice = chunk.choices[0]
 
@@ -303,6 +305,7 @@ export async function* gptAskAboutCode({
     }
 
     if (firstChoice.finish_reason === 'stop') {
+      yield response
       break
     }
 
@@ -312,7 +315,9 @@ export async function* gptAskAboutCode({
 
     response += firstChoice.delta.content || ''
 
-    yield response
+    if (shouldYield()) {
+      yield response
+    }
   }
 }
 

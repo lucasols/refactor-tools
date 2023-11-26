@@ -22,9 +22,13 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     return
   }
 
+  const lastInstruction = ctx.history.getLast()?.get<string>('lastInstruction')
+
   const selectedCode = await ctx.activeEditor.getSelected()
 
-  const instructions = await ctx.prompt.text('Code question')
+  const instructions = await ctx.prompt.text('Code question', lastInstruction)
+
+  ctx.history.add('lastInstruction', instructions)
 
   if (!instructions) {
     throw new Error('No instructions provided')
@@ -42,8 +46,6 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     editorGroup: 'right',
   })
 
-  await editor.openMarkdownPreview()
-
   const mdResponse = gptAskAboutCode({
     question: instructions,
     contextCode: selectedText,
@@ -55,4 +57,6 @@ refacTools.runRefactor<Variants>(async (ctx) => {
   for await (const partialResponse of mdResponse) {
     await editor.setContent(partialResponse)
   }
+
+  await editor.openMarkdownPreview()
 })
