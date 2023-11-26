@@ -79,6 +79,7 @@ type Selected = {
     start: number
     end: number
   }
+  getEditor: () => Promise<EditorMethods>
   editorUri: vsc.Uri
 }
 
@@ -183,7 +184,7 @@ export type RefacToolsCtx<V extends string> = {
   forceCancel: () => void
   vscodeCtx: typeof vsc
   prompt: {
-    text: (message: string) => Promise<string | false>
+    text: (message: string, initialValue?: string) => Promise<string | false>
     quickPick: <T extends string>(props: {
       options: { label: string; value: T }[]
       title: string
@@ -195,13 +196,7 @@ export type RefacToolsCtx<V extends string> = {
       defaultValue?: T[]
     }) => Promise<T[] | false>
     waitTextSelection: (message: string, buttonLabel: string) => Promise<Selected | false>
-    dialog: (
-      message: string,
-      options?: {
-        title?: string
-        buttons?: string[]
-      },
-    ) => Promise<string | boolean>
+    dialog: <B extends string>(message: string, buttons: B[]) => Promise<B | false>
   }
 }
 
@@ -407,13 +402,14 @@ export function initializeCtx(
     return result
   }
 
-  async function promptText(message: string) {
+  async function promptText(message: string, initialValue?: string) {
     throwIfCancelled()
 
     await sleep(50)
 
     const input = await vscode.window.showInputBox({
       prompt: message,
+      value: initialValue,
     })
 
     return input || false
@@ -460,6 +456,9 @@ export function initializeCtx(
           range: {
             start: editor.document.offsetAt(editor.selection.start),
             end: editor.document.offsetAt(editor.selection.end),
+          },
+          getEditor: async () => {
+            return getEditorMethods(await getEditor())
           },
           editorUri: editor.document.uri,
           replaceWith: async (code: string) => {
@@ -684,13 +683,10 @@ export function initializeCtx(
 
         return selectedText
       },
-      async dialog(message, options) {
+      async dialog(message, buttons) {
         throwIfCancelled()
 
-        const selected = await vscode.window.showInformationMessage(
-          message,
-          ...(options?.buttons ?? []),
-        )
+        const selected = await vscode.window.showInformationMessage(message, ...buttons)
 
         if (!selected) {
           return false
