@@ -12,11 +12,22 @@ refacTools.runRefactor(async (ctx) => {
 
   if (!textToCheck) return
 
-  const translatedText = await gptTransform({
+  const editor = await ctx.ide.newUnsavedFile({
+    language: 'markdown',
+    content: '',
+    editorGroup: 'right',
+  })
+
+  const translatedText = gptTransform({
     input: textToCheck,
     prompt: 'Correct the grammar of the text',
     returnExplanation: true,
+    onCancel: ctx.onCancel,
   })
 
-  await ctx.fs.createTempFile('md', translatedText).openEditor('right')
+  for await (const partialResponse of translatedText) {
+    await editor.setContent(partialResponse)
+  }
+
+  await editor.openMarkdownPreview()
 })

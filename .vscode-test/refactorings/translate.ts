@@ -17,13 +17,24 @@ refacTools.runRefactor<'default' | 'ptToEn'>(async (ctx) => {
 
   if (!textToTranslate) return
 
-  const translatedText = await gptTransform({
+  const editor = await ctx.ide.newUnsavedFile({
+    language: 'markdown',
+    content: '',
+    editorGroup: 'right',
+  })
+
+  const translatedText = gptTransform({
     input: textToTranslate,
     prompt:
       ctx.variant === 'ptToEn' ?
         'Translate from Portuguese to English'
       : 'Translate from English to Portuguese',
+    onCancel: ctx.onCancel,
   })
 
-  await ctx.fs.createTempFile('txt', translatedText).openEditor('right')
+  for await (const partialResponse of translatedText) {
+    await editor.setContent(partialResponse)
+  }
+
+  await editor.openMarkdownPreview()
 })
