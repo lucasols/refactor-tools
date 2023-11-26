@@ -442,8 +442,6 @@ export function initializeCtx(
 
         const editor = await getEditor()
 
-        await focusEditor(editor)
-
         return getSelectionFromEditor(editor, getEditorMethods, getEditor)
       }
     return {
