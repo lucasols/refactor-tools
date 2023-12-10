@@ -248,9 +248,32 @@ export function initializeCtx(
 
   const onCancelToken = new vsc.CancellationTokenSource()
 
-  refactoringEvents.on('cancelParent', () => {
+  refactoringEvents.on('cancel', () => {
     onCancelToken.cancel()
   })
+
+  async function waitOrThrowIfCancelled<T>(promise: Thenable<T>): Promise<T> {
+    let disposeOnCancel = null as (() => void) | null
+
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((res, reject) => {
+          const unsub = refactoringEvents.on('cancel', () => {
+            reject(true)
+          })
+
+          disposeOnCancel = () => {
+            unsub()
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            res(1 as any)
+          }
+        }),
+      ])
+    } finally {
+      disposeOnCancel?.()
+    }
+  }
 
   const showDiff: RefacToolsCtx<string>['showDiff'] = async ({
     title,
@@ -408,10 +431,13 @@ export function initializeCtx(
 
     await sleep(50)
 
-    const input = await vscode.window.showInputBox({
-      prompt: message,
-      value: initialValue,
-    })
+    const input = await waitOrThrowIfCancelled(
+      vscode.window.showInputBox({
+        prompt: message,
+        value: initialValue,
+        ignoreFocusOut: true,
+      }),
+    )
 
     return input || false
   }
@@ -643,7 +669,9 @@ export function initializeCtx(
       async waitTextSelection(message, buttonLabel) {
         throwIfCancelled()
 
-        const selected = await vscode.window.showInformationMessage(message, buttonLabel)
+        const selected = await waitOrThrowIfCancelled(
+          vscode.window.showInformationMessage(message, buttonLabel),
+        )
 
         throwIfCancelled()
 
@@ -664,7 +692,9 @@ export function initializeCtx(
       async dialog(message, buttons) {
         throwIfCancelled()
 
-        const selected = await vscode.window.showInformationMessage(message, ...buttons)
+        const selected = await waitOrThrowIfCancelled(
+          vscode.window.showInformationMessage(message, ...buttons),
+        )
 
         if (!selected) {
           return false
