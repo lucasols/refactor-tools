@@ -51,13 +51,17 @@ refacTools.runRefactor(async (ctx) => {
   async function updateInstructionsAndExamples() {
     const content = await promptFile.getContent()
 
-    const examplesCodeRegex = /```([\s\S]+?\n\/\/ after[\s\S]+?)```/
+    const examplesCodeRegex = /```([\s\S]+?)\n\/\/ after([\s\S]+?)```/
 
     for (const {
       groups: [old, refactored],
     } of getRegexMatchAll(content, examplesCodeRegex)) {
       if (!old || !refactored) {
         throw new Error('Invalid examples')
+      }
+
+      if (old.trim() === refactored.trim()) {
+        throw new Error('Examples should be different')
       }
 
       examples.push({ old: old.trim(), refactored: refactored.trim() })
@@ -118,6 +122,8 @@ refacTools.runRefactor(async (ctx) => {
       })
 
       await selectedCode.replaceWith(refactoredCode)
+
+      await activeEditor.format()
 
       return awaiNextAction()
     }
