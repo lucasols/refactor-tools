@@ -5,6 +5,8 @@ export async function simpleCodeQuestion(
   ctx: RefacToolsCtx<string>,
   useGpt3?: boolean,
 ) {
+  const activeEditor = ctx.getActiveEditor()
+
   const modelToUse =
     useGpt3 ? 'useGpt3' : (
       await ctx.prompt.quickPick({
@@ -20,7 +22,7 @@ export async function simpleCodeQuestion(
     return
   }
 
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await activeEditor.getSelected()
 
   if (!selectedCode) {
     throw new Error('No code selected')
@@ -37,7 +39,7 @@ export async function simpleCodeQuestion(
   const mdResponse = gptAskAboutCode({
     question: instructions,
     contextCode: selectedText,
-    language: ctx.activeEditor.language,
+    language: activeEditor.language,
     useGpt3: modelToUse === 'useGpt3',
     onCancel: ctx.onCancel,
   })

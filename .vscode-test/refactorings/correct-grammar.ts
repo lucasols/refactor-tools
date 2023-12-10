@@ -5,7 +5,7 @@ refacTools.config({
 })
 
 refacTools.runRefactor(async (ctx) => {
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await ctx.getActiveEditor().getSelected()
 
   const textToCheck =
     selectedCode ? selectedCode.text : await ctx.prompt.text('Text to check')

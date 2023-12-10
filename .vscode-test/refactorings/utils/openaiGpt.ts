@@ -47,9 +47,9 @@ export async function* gptTransform({
         content: joinStrings(
           `You is a text smart transformer. You will be provided with only inputs. Your task is to convert them according to the instruction: "${escapeDoubleQuotes(
             prompt,
-          )}"`,
+          )}".`,
           returnExplanation ?
-            `, and return the output along with an explanation of your reasoning in markdown.`
+            `, and return the output along with an explanation of your changes in markdown.`
           : `, and return ONLY the output.`,
           examples && examples.length > 0 ?
             `\nConsider the following references for your task:\n${examples
@@ -291,11 +291,11 @@ export async function* gptAskAboutCode({
       {
         role: 'system',
         content: joinStrings(
-          `You is a programmer expert for the language ${language}. Your task is to answer the questions or instructions about the following code as context:`,
+          `You is a programmer expert for the language ${language}. Your task is to answer the questions or follow instructions about the following code as context:`,
           `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
           selectedCode &&
             `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
-          `\n\nRespond using markdown.`,
+          `\n\nRespond using markdown. Do your best!`,
         ),
       },
       {

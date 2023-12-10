@@ -13,6 +13,8 @@ refacTools.config<Variants>({
 })
 
 refacTools.runRefactor<Variants>(async (ctx) => {
+  const activeEditor = ctx.getActiveEditor()
+
   const modelToUse = await ctx.prompt.quickPick({
     options: [
       { label: 'Use GPT-3', value: 'useGpt3' },
@@ -25,7 +27,7 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     return
   }
 
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await activeEditor.getSelected()
 
   if (!selectedCode) {
     throw new Error('No code selected')
@@ -65,13 +67,13 @@ refacTools.runRefactor<Variants>(async (ctx) => {
   const acceptedRefactoredCode = await ctx.showDiff({
     original: selectedCode,
     refactored: refactoredCode,
-    ext: ctx.activeEditor.extension,
+    ext: activeEditor.extension,
     generatingDiffMessage: '🛠️ Refactoring...',
   })
 
   if (acceptedRefactoredCode) {
-    await ctx.activeEditor.setContent(acceptedRefactoredCode)
+    await activeEditor.setContent(acceptedRefactoredCode)
 
-    await ctx.activeEditor.format()
+    await activeEditor.format()
   }
 })

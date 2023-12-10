@@ -1,4 +1,6 @@
-import { gptCodeRefactorStream } from './utils/openaiGpt'
+import { dedent } from './utils/dedent'
+import { getRegexMatchAll, getRegexMatches } from './utils/getRegexMatches'
+import { gptCodeRefactor, gptCodeRefactorStream } from './utils/openaiGpt'
 import { joinStrings } from './utils/stringUtils'
 
 refacTools.config({
@@ -20,136 +22,131 @@ refacTools.runRefactor(async (ctx) => {
 
   const examples: { old: string; refactored: string }[] = []
 
-  let extraInstructions: string | null = null
+  let instructions = 'Refactor the code following the examples provided'
 
-  async function addExample() {
-    const exampleOriginal = await ctx.prompt.waitTextSelection(
-      `Let's add a example. Select the original code`,
-      'Use selection as original',
-    )
+  const promptFile = await ctx.ide.newUnsavedFile({
+    language: 'markdown',
+    content: dedent`
+      # Instructions
 
-    if (!exampleOriginal) {
-      return false
+      Add examples of code refactoring you want to perform. And possibly extra instructions.
+
+      ## Examples
+
+      \`\`\`ts
+      // ...
+
+      // after
+
+      // ...
+
+      \`\`\`
+
+      ## Instructions
+
+      Refactor the code following the examples provided
+    `,
+  })
+
+  async function updateInstructionsAndExamples() {
+    const content = await promptFile.getContent()
+
+    const examplesCodeRegex = /```([\s\S]+?\n\/\/ after[\s\S]+?)```/
+
+    for (const {
+      groups: [old, refactored],
+    } of getRegexMatchAll(content, examplesCodeRegex)) {
+      if (!old || !refactored) {
+        throw new Error('Invalid examples')
+      }
+
+      examples.push({ old: old.trim(), refactored: refactored.trim() })
     }
 
-    const exampleRefactored = await ctx.prompt.waitTextSelection(
-      `Now select the refactored code`,
-      'Use selection as refactored',
-    )
+    const instructionsRegex = /## Instructions([\s\S]+)/
 
-    if (!exampleRefactored) {
-      return false
+    const {
+      groups: [instructionsFromFile],
+    } = getRegexMatches(content, instructionsRegex)
+
+    if (!instructionsFromFile?.trim()) {
+      throw new Error('Invalid instructions')
     }
 
-    if (exampleOriginal.text === exampleRefactored.text) {
-      ctx.ide.showErrorMessage('The original and refactored code are the same')
-      return false
+    instructions = instructionsFromFile.trim()
+
+    if (examples.length === 0) {
+      throw new Error('No examples provided')
     }
-
-    examples.push({ old: exampleOriginal.text, refactored: exampleRefactored.text })
-
-    return true
-  }
-
-  const exampleAdded = await addExample()
-
-  if (!exampleAdded) {
-    return
   }
 
   async function awaiNextAction() {
     const nextAction = await ctx.prompt.dialog(
-      'Examples gathered, you can now start refactoring',
-      [
-        'Start refactoring',
-        'Add more examples',
-        'Remove last example',
-        'Add extra instructions',
-        'Show examples',
-      ],
+      'Fill the examples and start the refactoring',
+      ['Quick refactoring', 'Refactor with diff'],
     )
 
-    if (nextAction === 'Add more examples') {
-      await addExample()
+    if (!nextAction) {
+      return false
+    }
+
+    try {
+      await updateInstructionsAndExamples()
+    } catch (e) {
+      if (e instanceof Error) ctx.ide.showErrorMessage(e.message)
 
       return awaiNextAction()
     }
 
-    if (nextAction === 'Add extra instructions') {
-      const newExtraInstructions = await ctx.prompt.text(
-        'Add extra instructions',
-        extraInstructions || undefined,
-      )
+    const activeEditor = ctx.getActiveEditor()
 
-      if (newExtraInstructions) {
-        extraInstructions = newExtraInstructions
-      }
+    const selectedCode = await activeEditor.getSelected()
+
+    if (!selectedCode) {
+      ctx.ide.showErrorMessage('No code selected')
 
       return awaiNextAction()
     }
 
-    if (nextAction === 'Remove last example') {
-      examples.pop()
+    if (nextAction === 'Quick refactoring') {
+      const refactoredCode = await gptCodeRefactor({
+        instructions,
+        oldCode: selectedCode.text,
+        language: selectedCode.language,
+        useGpt3: modelToUse === 'useGpt3',
+        examples,
+      })
+
+      await selectedCode.replaceWith(refactoredCode)
 
       return awaiNextAction()
     }
 
-    if (nextAction === 'Start refactoring') {
-      const originalCode = await ctx.prompt.waitTextSelection(
-        'Select the code you want to refactor',
-        'Use selection as code to refactor',
-      )
-
-      if (!originalCode) {
-        return awaiNextAction()
-      }
-
+    if (nextAction === 'Refactor with diff') {
       const refactoredCode = gptCodeRefactorStream({
-        instructions: joinStrings(
-          'Follow the examples provided',
-          extraInstructions &&
-            ` and consider also this instruction: ${extraInstructions}`,
-        ),
-        oldCode: originalCode.text,
-        language: originalCode.language,
+        instructions,
+        oldCode: selectedCode.text,
+        language: selectedCode.language,
         useGpt3: modelToUse === 'useGpt3',
         examples,
         onCancel: ctx.onCancel,
       })
 
       const acceptedRefactoredCode = await ctx.showDiff({
-        original: originalCode,
+        original: selectedCode,
         refactored: refactoredCode,
-        ext: ctx.activeEditor.extension,
+        ext: activeEditor.extension,
         generatingDiffMessage: '🛠️ Refactoring...',
       })
 
       if (acceptedRefactoredCode) {
-        const originalEditor = await originalCode.getEditor()
+        await activeEditor.setContent(acceptedRefactoredCode)
 
-        await originalEditor.setContent(acceptedRefactoredCode)
-
-        await originalEditor.format()
+        await activeEditor.format()
       }
 
       return awaiNextAction()
     }
-
-    if (nextAction === 'Show examples') {
-      await ctx.ide.newUnsavedFile({
-        language: 'markdown',
-        content: examples
-          .map(
-            (example) =>
-              `### Original\n\n\`\`\`\n${example.old}\n\`\`\`\n\n### Refactored\n\n\`\`\`\n${example.refactored}\n\`\`\``,
-          )
-          .join('\n\n'),
-      })
-
-      return awaiNextAction()
-    }
-
-    return false
   }
 
   await awaiNextAction()

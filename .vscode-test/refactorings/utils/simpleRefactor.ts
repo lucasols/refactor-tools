@@ -5,6 +5,8 @@ export async function simpleRefactor(
   ctx: RefacToolsCtx<'quickReplace'>,
   useGpt3?: boolean,
 ) {
+  const activeEditor = ctx.getActiveEditor()
+
   const modelToUse =
     useGpt3 ? 'useGpt3' : (
       await ctx.prompt.quickPick({
@@ -20,7 +22,7 @@ export async function simpleRefactor(
     return
   }
 
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await activeEditor.getSelected()
 
   if (!selectedCode) {
     throw new Error('No code selected')
@@ -50,13 +52,13 @@ export async function simpleRefactor(
   const acceptedRefactoredCode = await ctx.showDiff({
     original: selectedCode,
     refactored: refactoredCode,
-    ext: ctx.activeEditor.extension,
+    ext: activeEditor.extension,
     generatingDiffMessage: '🛠️ Refactoring...',
   })
 
   if (acceptedRefactoredCode) {
-    await ctx.activeEditor.setContent(acceptedRefactoredCode)
+    await activeEditor.setContent(acceptedRefactoredCode)
 
-    await ctx.activeEditor.format()
+    await activeEditor.format()
   }
 }

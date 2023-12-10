@@ -10,7 +10,7 @@ refacTools.config({
 })
 
 refacTools.runRefactor<'default' | 'ptToEn'>(async (ctx) => {
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await ctx.getActiveEditor().getSelected()
 
   const textToTranslate =
     selectedCode ? selectedCode.text : await ctx.prompt.text('Text to translate')

@@ -10,6 +10,8 @@ refacTools.config<Variants>({
 })
 
 refacTools.runRefactor<Variants>(async (ctx) => {
+  const activeEditor = ctx.getActiveEditor()
+
   const modelToUse = await ctx.prompt.quickPick({
     options: [
       { label: 'Use GPT-3', value: 'useGpt3' },
@@ -24,7 +26,7 @@ refacTools.runRefactor<Variants>(async (ctx) => {
 
   const lastInstruction = ctx.history.getLast()?.get<string>('lastInstruction')
 
-  const selectedCode = await ctx.activeEditor.getSelected()
+  const selectedCode = await activeEditor.getSelected()
 
   const instructions = await ctx.prompt.text('Code question', lastInstruction)
 
@@ -49,7 +51,7 @@ refacTools.runRefactor<Variants>(async (ctx) => {
   const mdResponse = gptAskAboutCode({
     question: instructions,
     contextCode: selectedText,
-    language: ctx.activeEditor.language,
+    language: activeEditor.language,
     useGpt3: modelToUse === 'useGpt3',
     onCancel: ctx.onCancel,
   })

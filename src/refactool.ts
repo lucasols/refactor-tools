@@ -171,7 +171,7 @@ export type RefacToolsCtx<V extends string> = {
       }[]
     >
   }
-  activeEditor: EditorMethods
+  getActiveEditor: () => EditorMethods
   showDiff: (props: {
     title?: string
     original: string | Selected | { editor: EditorMethods; replaceAtOffset: number }
@@ -189,6 +189,7 @@ export type RefacToolsCtx<V extends string> = {
       options: { label: string; value: T }[]
       title: string
       defaultValue?: T
+      ignoreFocusOut?: boolean
     }) => Promise<T | false>
     multiQuickPick: <T extends string>(props: {
       options: { label: string; value: T }[]
@@ -229,12 +230,6 @@ export function initializeCtx(
     }
   }
 
-  const initialActiveEditor = vscode.window.activeTextEditor
-
-  if (!initialActiveEditor) {
-    return
-  }
-
   function getEditorByUri(uri: string) {
     return vscode.window.visibleTextEditors.find(
       (editor) => editor.document.uri.toString() === uri,
@@ -249,6 +244,12 @@ export function initializeCtx(
 
   refactoringEvents.on('cancel', () => {
     isCancelled = true
+  })
+
+  const onCancelToken = new vsc.CancellationTokenSource()
+
+  refactoringEvents.on('cancelParent', () => {
+    onCancelToken.cancel()
   })
 
   const showDiff: RefacToolsCtx<string>['showDiff'] = async ({
@@ -436,14 +437,13 @@ export function initializeCtx(
       return editor
     }
 
-    const getSelected: RefacToolsCtx<string>['activeEditor']['getSelected'] =
-      async () => {
-        if (isCancelled) return null
+    const getSelected: EditorMethods['getSelected'] = async () => {
+      if (isCancelled) return null
 
-        const editor = await getEditor()
+      const editor = await getEditor()
 
-        return getSelectionFromEditor(editor, getEditorMethods, getEditor)
-      }
+      return getSelectionFromEditor(editor, getEditorMethods, getEditor)
+    }
     return {
       getSelected,
       language: _editor.document.languageId as LanguageId,
@@ -610,7 +610,7 @@ export function initializeCtx(
     },
     prompt: {
       text: promptText,
-      async quickPick({ options, title, defaultValue }) {
+      async quickPick({ options, title, defaultValue, ignoreFocusOut }) {
         throwIfCancelled()
 
         const selected = await vscode.window.showQuickPick(
@@ -619,7 +619,8 @@ export function initializeCtx(
             value,
             picked: value === defaultValue,
           })),
-          { title },
+          { title, ignoreFocusOut },
+          onCancelToken.token,
         )
 
         return selected?.value || false
@@ -634,6 +635,7 @@ export function initializeCtx(
             picked: defaultValue?.includes(value) ?? false,
           })),
           { title, canPickMany: true },
+          onCancelToken.token,
         )
 
         return selected?.map((s) => s.value) || false
@@ -642,6 +644,8 @@ export function initializeCtx(
         throwIfCancelled()
 
         const selected = await vscode.window.showInformationMessage(message, buttonLabel)
+
+        throwIfCancelled()
 
         if (!selected) {
           return false
@@ -982,7 +986,15 @@ export function initializeCtx(
         return includedFiles
       },
     },
-    activeEditor: getEditorMethods(initialActiveEditor),
+    getActiveEditor: () => {
+      const active = vscode.window.activeTextEditor
+
+      if (!active) {
+        throw new Error('No active editor')
+      }
+
+      return getEditorMethods(active)
+    },
     showDiff,
   }
 }
