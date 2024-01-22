@@ -113,17 +113,19 @@ refacTools.runRefactor(async (ctx) => {
     }
 
     if (nextAction === 'Quick refactoring') {
-      const refactoredCode = await gptCodeRefactor({
-        instructions,
-        oldCode: selectedCode.text,
-        language: selectedCode.language,
-        useGpt3: modelToUse === 'useGpt3',
-        examples,
+      await ctx.ide.showProgress('🛠️ Refactoring...', async () => {
+        const refactoredCode = await gptCodeRefactor({
+          instructions,
+          oldCode: selectedCode.text,
+          language: selectedCode.language,
+          useGpt3: modelToUse === 'useGpt3',
+          examples,
+        })
+
+        await selectedCode.replaceWith(refactoredCode)
+
+        await activeEditor.format()
       })
-
-      await selectedCode.replaceWith(refactoredCode)
-
-      await activeEditor.format()
 
       return awaiNextAction()
     }
