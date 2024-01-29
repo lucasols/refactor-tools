@@ -35,7 +35,7 @@ export async function* gptTransform({
     return mockResponse
   }
 
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo-preview'
 
   const responseStream = await openai.chat.completions.create({
     model,

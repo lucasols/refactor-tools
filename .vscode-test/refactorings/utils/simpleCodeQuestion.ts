@@ -7,21 +7,6 @@ export async function simpleCodeQuestion(
 ) {
   const activeEditor = ctx.getActiveEditor()
 
-  const modelToUse =
-    useGpt3 ? 'useGpt3' : (
-      await ctx.prompt.quickPick({
-        options: [
-          { label: 'Use GPT-3', value: 'useGpt3' },
-          { label: 'Use GPT-4', value: 'useGpt4' },
-        ],
-        title: 'Select GPT model',
-      })
-    )
-
-  if (!modelToUse) {
-    return
-  }
-
   const selectedCode = await activeEditor.getSelected()
 
   if (!selectedCode) {
@@ -40,7 +25,6 @@ export async function simpleCodeQuestion(
     question: instructions,
     contextCode: selectedText,
     language: activeEditor.language,
-    useGpt3: modelToUse === 'useGpt3',
     onCancel: ctx.onCancel,
   })
 

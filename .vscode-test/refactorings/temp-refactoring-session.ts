@@ -8,18 +8,6 @@ refacTools.config({
 })
 
 refacTools.runRefactor(async (ctx) => {
-  const modelToUse = await ctx.prompt.quickPick({
-    options: [
-      { label: 'Use GPT-3', value: 'useGpt3' },
-      { label: 'Use GPT-4', value: 'useGpt4' },
-    ],
-    title: 'Select GPT model',
-  })
-
-  if (!modelToUse) {
-    return
-  }
-
   const examples: { old: string; refactored: string }[] = []
 
   let instructions = 'Refactor the code following the examples provided'
@@ -118,7 +106,6 @@ refacTools.runRefactor(async (ctx) => {
           instructions,
           oldCode: selectedCode.text,
           language: selectedCode.language,
-          useGpt3: modelToUse === 'useGpt3',
           examples,
         })
 
@@ -135,7 +122,6 @@ refacTools.runRefactor(async (ctx) => {
         instructions,
         oldCode: selectedCode.text,
         language: selectedCode.language,
-        useGpt3: modelToUse === 'useGpt3',
         examples,
         onCancel: ctx.onCancel,
       })

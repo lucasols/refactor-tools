@@ -7,21 +7,6 @@ export async function simpleRefactor(
 ) {
   const activeEditor = ctx.getActiveEditor()
 
-  const modelToUse =
-    useGpt3 ? 'useGpt3' : (
-      await ctx.prompt.quickPick({
-        options: [
-          { label: 'Use GPT-3', value: 'useGpt3' },
-          { label: 'Use GPT-4', value: 'useGpt4' },
-        ],
-        title: 'Select GPT model',
-      })
-    )
-
-  if (!modelToUse) {
-    return
-  }
-
   const selectedCode = await activeEditor.getSelected()
 
   if (!selectedCode) {
@@ -33,7 +18,6 @@ export async function simpleRefactor(
       instructions,
       oldCode: selectedCode.text,
       language: selectedCode.language,
-      useGpt3: modelToUse === 'useGpt3',
     })
 
     await selectedCode.replaceWith(refactoredCode)
@@ -45,7 +29,6 @@ export async function simpleRefactor(
     instructions,
     oldCode: selectedCode.text,
     language: selectedCode.language,
-    useGpt3: modelToUse === 'useGpt3',
     onCancel: ctx.onCancel,
   })
 
