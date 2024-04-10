@@ -3,7 +3,6 @@ import { gptAskAboutCode } from './openaiGpt'
 export async function simpleCodeQuestion(
   instructions: string,
   ctx: RefacToolsCtx<string>,
-  useGpt3?: boolean,
 ) {
   const activeEditor = ctx.getActiveEditor()
 

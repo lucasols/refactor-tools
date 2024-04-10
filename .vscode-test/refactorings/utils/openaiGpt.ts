@@ -9,6 +9,83 @@ const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
 })
 
+export async function* smartAssistant({
+  prompt,
+  selectedText,
+  mockResponse,
+  useGpt3,
+  maxTokens = 4096,
+  onCancel,
+}: {
+  prompt: string
+  maxTokens?: number
+  selectedText?: string
+  mockResponse?: string
+  useGpt3?: boolean
+  onCancel: RefacToolsCtx['onCancel']
+}) {
+  if (mockResponse) {
+    return mockResponse
+  }
+
+  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
+
+  const responseStream = await openai.chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    stream: true,
+    messages: [
+      {
+        role: 'system',
+        content: joinStrings(
+          `You are a smart assistant. Your task is to answer the user's questions or follow instructions.`,
+          selectedText ?
+            `\n\nThe user has selected the following text: "${escapeDoubleQuotes(
+              selectedText,
+            )}"`
+          : '',
+          '\n\nRespond using markdown.',
+        ),
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+  })
+
+  let response = ''
+
+  onCancel(() => {
+    responseStream.controller.abort()
+  })
+
+  const { shouldYield } = throttledYield(1000)
+
+  for await (const chunk of responseStream) {
+    const firstChoice = chunk.choices[0]
+
+    if (!firstChoice) {
+      throw new Error('No response from OpenAI')
+    }
+
+    if (firstChoice.finish_reason === 'stop') {
+      yield response
+      break
+    }
+
+    if (firstChoice.finish_reason) {
+      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
+    }
+
+    response += firstChoice.delta.content || ''
+
+    if (shouldYield()) {
+      yield response
+    }
+  }
+}
+
 export async function* gptTransform({
   prompt,
   examples,
