@@ -40,7 +40,7 @@ export async function* smartAssistant({
         content: joinStrings(
           `You are a smart assistant. Your task is to answer the user's questions or follow instructions.`,
           selectedText ?
-            `\n\nThe user has selected the following text: "${escapeDoubleQuotes(
+            `\n\nThe user is using a text editor and has selected the following text: "${escapeDoubleQuotes(
               selectedText,
             )}"`
           : '',
