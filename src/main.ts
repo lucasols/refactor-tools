@@ -1,8 +1,9 @@
 import { build } from 'esbuild'
-import { posix } from 'path'
 import { evtmitter } from 'evtmitter'
+import { posix } from 'path'
 import * as vm from 'vm'
 import * as vscode from 'vscode'
+import { MemFS } from './memFs'
 import {
   HistoryEntry,
   RefactorConfig,
@@ -11,7 +12,6 @@ import {
   refacTools,
 } from './refactool'
 import { dedent, notNullish } from './utils'
-import { MemFS } from './memFs'
 
 const scriptsFolder = `/.vscode/refactorings`
 const extractConfigRegex = /refacTools\.config(?:<\w+>)*\((\{[\s\S]*?\})\)/
@@ -93,9 +93,11 @@ function getUserRefactoringsProjectUri() {
   return vscode.Uri.file(posix.join(userRefactoringProject, '/refactorings'))
 }
 
+type LastUsages = string[]
+
 async function getRefactoringsList(
   outputChannel: vscode.OutputChannel,
-  mostUsedRefactorings: { [filename: string]: number },
+  lastUsages: LastUsages,
 ) {
   const folderToCheck: {
     files: [filename: string, type: vscode.FileType][]
@@ -199,12 +201,19 @@ async function getRefactoringsList(
     }
   }
 
+  const lastUsagesCountByFilename = new Map<string, number>()
+
+  for (const refactoring of lastUsages) {
+    lastUsagesCountByFilename.set(
+      refactoring,
+      (lastUsagesCountByFilename.get(refactoring) ?? 0) + 1,
+    )
+  }
+
   availableRefactorings = sortBy(
     availableRefactorings,
-    ({ filename }) => mostUsedRefactorings[filename] ?? 0,
-    {
-      order: 'desc',
-    },
+    ({ filename }) => lastUsagesCountByFilename.get(filename) ?? 0,
+    { order: 'desc' },
   )
 
   try {
@@ -295,10 +304,9 @@ async function getRefactoringsList(
 export function activate(context: vscode.ExtensionContext) {
   const memFs = new MemFS()
 
-  const mostUsedRefactorings =
-    context.globalState.get<{
-      [filename: string]: number
-    }>('mostUsedRefactorings') ?? {}
+  function getLastUsages() {
+    return context.globalState.get<LastUsages>('lastUsages') ?? []
+  }
 
   const outputChannel = vscode.window.createOutputChannel('RefacTools')
 
@@ -319,7 +327,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('refactools.listRefactorings', async () => {
       const selectedRefactoring = await vscode.window.showQuickPick(
-        getRefactoringsList(outputChannel, mostUsedRefactorings),
+        getRefactoringsList(outputChannel, getLastUsages()),
         {
           title: 'Available refactorings',
           matchOnDescription: true,
@@ -436,11 +444,15 @@ export function activate(context: vscode.ExtensionContext) {
                   values: runsValues,
                 })
 
-                context.globalState.update('mostUsedRefactorings', {
-                  ...mostUsedRefactorings,
-                  [selectedRefactoring.filename]:
-                    (mostUsedRefactorings[selectedRefactoring.filename] ?? 0) + 1,
-                })
+                let newLastUsages = getLastUsages()
+
+                if (newLastUsages.length > 50) {
+                  newLastUsages = newLastUsages.slice(-50)
+                }
+
+                newLastUsages.push(selectedRefactoring.filename)
+
+                context.globalState.update('mostUsedRefactorings', newLastUsages)
               } catch (e) {
                 const errorMsg = getErrorMessage(e)
                 outputChannel.appendLine(`Error running the refactoring:`)
