@@ -31,7 +31,8 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "esbuild": "^0.19.5"
+    "esbuild": "^0.19.5",
+    "@vscode/vsce": "^2.25.0"
   },
   "engines": {
     "vscode": ">=1.83.0",

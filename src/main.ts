@@ -452,7 +452,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 newLastUsages.push(selectedRefactoring.filename)
 
-                context.globalState.update('mostUsedRefactorings', newLastUsages)
+                context.globalState.update('lastUsages', newLastUsages)
               } catch (e) {
                 const errorMsg = getErrorMessage(e)
                 outputChannel.appendLine(`Error running the refactoring:`)
