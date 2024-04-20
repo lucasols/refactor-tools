@@ -25,6 +25,7 @@ refacTools.runRefactor<'default' | 'ptToEn'>(async (ctx) => {
 
   const translatedText = gptTransform({
     input: textToTranslate,
+    model: { service: 'openai', model: 'gpt-4' },
     prompt:
       ctx.variant === 'ptToEn' ?
         'Translate from Portuguese to English'

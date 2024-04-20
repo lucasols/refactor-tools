@@ -23,6 +23,7 @@ refacTools.runRefactor(async (ctx) => {
     prompt: 'Improve the text',
     returnExplanation: true,
     onCancel: ctx.onCancel,
+    model: { service: 'openai', model: 'gpt-4' },
   })
 
   for await (const partialResponse of translatedText) {

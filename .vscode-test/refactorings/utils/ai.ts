@@ -85,6 +85,8 @@ async function* getAiResponseStream({
         yield response
       }
     }
+
+    return response
   }
 
   if (model.service === 'grog') {
@@ -128,9 +130,9 @@ async function* getAiResponseStream({
         yield response
       }
     }
-  }
 
-  throw new Error('No AI model selected')
+    return response
+  }
 }
 
 export async function getAiResponse({
@@ -224,7 +226,7 @@ export async function* smartAssistant({
     return mockResponse
   }
 
-  return getAiResponseStream({
+  for await (const response of getAiResponseStream({
     model,
     messages: [
       {
@@ -246,7 +248,9 @@ export async function* smartAssistant({
     ],
     onCancel,
     maxTokens,
-  })
+  })) {
+    yield response
+  }
 }
 
 export async function* gptTransform({
@@ -275,7 +279,7 @@ export async function* gptTransform({
     return mockResponse
   }
 
-  return getAiResponseStream({
+  for await (const response of getAiResponseStream({
     model,
     messages: [
       {
@@ -303,7 +307,9 @@ export async function* gptTransform({
     ],
     onCancel,
     maxTokens,
-  })
+  })) {
+    yield response
+  }
 }
 
 function escapeDoubleQuotes(str: string) {
@@ -419,7 +425,7 @@ export async function* gptAskAboutCode({
   onCancel: RefacToolsCtx['onCancel']
   model?: AiModels
 }): AsyncGenerator<string> {
-  return getAiResponseStream({
+  for await (const response of getAiResponseStream({
     model,
     messages: [
       {
@@ -439,7 +445,9 @@ export async function* gptAskAboutCode({
     ],
     onCancel,
     maxTokens,
-  })
+  })) {
+    yield response
+  }
 }
 
 export async function gptGenericPrompt({

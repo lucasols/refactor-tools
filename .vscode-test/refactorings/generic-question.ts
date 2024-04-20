@@ -36,6 +36,7 @@ refacTools.runRefactor<Variants>(async (ctx) => {
     prompt: instructions,
     selectedText: selectedText,
     onCancel: ctx.onCancel,
+    model: { service: 'openai', model: 'gpt-4' },
   })
 
   for await (const partialResponse of mdResponse) {
