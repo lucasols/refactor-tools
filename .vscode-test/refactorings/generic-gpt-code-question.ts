@@ -1,4 +1,4 @@
-import { gptAskAboutCode } from './utils/openaiGpt'
+import { gptAskAboutCode } from './utils/ai'
 
 type Variants = 'useGpt4' | 'useGpt3'
 

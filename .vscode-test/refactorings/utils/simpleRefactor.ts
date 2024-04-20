@@ -1,4 +1,4 @@
-import { gptCodeRefactor, gptCodeRefactorStream } from './openaiGpt'
+import { gptCodeRefactor, gptCodeRefactorStream } from './ai'
 
 export async function simpleRefactor(
   instructions: string,

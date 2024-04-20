@@ -1,6 +1,7 @@
+import Grog from 'groq-sdk'
 import OpenAI from 'openai'
 import { dedent } from './dedent'
-import { OPENAI_API_KEY } from './env'
+import { GROG_API_KEY, OPENAI_API_KEY } from './env'
 import { joinStrings } from './stringUtils'
 
 const extractCodeRegex = /```(.*)\n([\s\S]+?)\n```/
@@ -9,31 +10,222 @@ const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
 })
 
+const grog = new Grog({
+  apiKey: GROG_API_KEY,
+})
+
+type GrogModels = 'llama-3-70b' | 'llama-3-8b' | 'mixtral-8x7b'
+
+type AiModels =
+  | { service: 'openai'; model: 'gpt-4' | 'gpt-3.5' }
+  | { service: 'grog'; model: GrogModels }
+
+const defaultModel: AiModels = {
+  service: 'grog',
+  model: 'llama-3-70b',
+}
+
+const grogModels: Record<GrogModels, string> = {
+  'llama-3-70b': 'llama3-70b-8192',
+  'llama-3-8b': 'llama3-8b-8192',
+  'mixtral-8x7b': 'mixtral-8x7b-32768',
+}
+
+async function* getAiResponseStream({
+  model,
+  messages,
+  onCancel,
+  stop,
+  maxTokens,
+}: {
+  model: AiModels
+  messages: { role: 'system' | 'user'; content: string }[]
+  onCancel?: (fn: () => void) => void
+  maxTokens?: number
+  stop?: string
+}): AsyncGenerator<string> {
+  if (model.service === 'openai') {
+    const modelToUse = model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
+
+    const responseStream = await openai.chat.completions.create({
+      model: modelToUse,
+      max_tokens: maxTokens,
+      stop,
+      stream: true,
+      messages: messages,
+    })
+
+    let response = ''
+
+    onCancel?.(() => {
+      responseStream.controller.abort()
+    })
+
+    const { shouldYield } = throttledYield(1000)
+
+    for await (const chunk of responseStream) {
+      const firstChoice = chunk.choices[0]
+
+      if (!firstChoice) {
+        throw new Error('No response from OpenAI')
+      }
+
+      if (firstChoice.finish_reason === 'stop') {
+        yield response
+        break
+      }
+
+      if (firstChoice.finish_reason) {
+        throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
+      }
+
+      response += firstChoice.delta.content || ''
+
+      if (shouldYield()) {
+        yield response
+      }
+    }
+  }
+
+  if (model.service === 'grog') {
+    const modelToUse = grogModels[model.model]
+
+    const responseStream = await grog.chat.completions.create({
+      model: modelToUse,
+      max_tokens: maxTokens,
+      stream: true,
+      stop,
+      messages: messages,
+    })
+
+    let response = ''
+
+    onCancel?.(() => {
+      responseStream.controller.abort()
+    })
+
+    const { shouldYield } = throttledYield(1000)
+
+    for await (const chunk of responseStream) {
+      const firstChoice = chunk.choices[0]
+
+      if (!firstChoice) {
+        throw new Error('No response from Grog')
+      }
+
+      if (firstChoice.finish_reason === 'stop') {
+        yield response
+        break
+      }
+
+      if (firstChoice.finish_reason) {
+        throw new Error(`Grog error: ${firstChoice.finish_reason}`)
+      }
+
+      response += firstChoice.delta.content || ''
+
+      if (shouldYield()) {
+        yield response
+      }
+    }
+  }
+
+  throw new Error('No AI model selected')
+}
+
+export async function getAiResponse({
+  model,
+  messages,
+  maxTokens,
+  stop,
+}: {
+  model: AiModels
+  stop?: string
+  messages: { role: 'system' | 'user'; content: string }[]
+  maxTokens?: number
+}): Promise<string> {
+  if (model.service === 'openai') {
+    const modelToUse = model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
+
+    const startTimestamp = Date.now()
+
+    const response = await openai.chat.completions.create({
+      model: modelToUse,
+      max_tokens: maxTokens,
+      messages,
+      stop,
+    })
+
+    const elapsed = Date.now() - startTimestamp
+
+    logUsage(elapsed, modelToUse, response.usage)
+
+    const firstChoice = response.choices[0]
+
+    if (firstChoice?.finish_reason !== 'stop') {
+      throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
+    }
+
+    if (!firstChoice.message.content) {
+      throw new Error('No response from OpenAI')
+    }
+
+    return firstChoice.message.content
+  }
+
+  if (model.service === 'grog') {
+    const modelToUse = grogModels[model.model]
+
+    const startTimestamp = Date.now()
+
+    const response = await grog.chat.completions.create({
+      model: modelToUse,
+      max_tokens: maxTokens,
+      messages,
+      stop,
+    })
+
+    const elapsed = Date.now() - startTimestamp
+
+    logUsage(elapsed, modelToUse, response.usage)
+
+    const firstChoice = response.choices[0]
+
+    if (firstChoice?.finish_reason !== 'stop') {
+      throw new Error(`Grog did not finish: ${firstChoice?.finish_reason}`)
+    }
+
+    if (!firstChoice.message.content) {
+      throw new Error('No response from Grog')
+    }
+
+    return firstChoice.message.content
+  }
+
+  throw new Error('No AI model selected')
+}
+
 export async function* smartAssistant({
   prompt,
   selectedText,
   mockResponse,
-  useGpt3,
   maxTokens = 4096,
   onCancel,
+  model = defaultModel,
 }: {
   prompt: string
   maxTokens?: number
   selectedText?: string
   mockResponse?: string
-  useGpt3?: boolean
+  model?: AiModels
   onCancel: RefacToolsCtx['onCancel']
 }) {
   if (mockResponse) {
     return mockResponse
   }
 
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
-
-  const responseStream = await openai.chat.completions.create({
+  return getAiResponseStream({
     model,
-    max_tokens: maxTokens,
-    stream: true,
     messages: [
       {
         role: 'system',
@@ -52,38 +244,9 @@ export async function* smartAssistant({
         content: prompt,
       },
     ],
+    onCancel,
+    maxTokens,
   })
-
-  let response = ''
-
-  onCancel(() => {
-    responseStream.controller.abort()
-  })
-
-  const { shouldYield } = throttledYield(1000)
-
-  for await (const chunk of responseStream) {
-    const firstChoice = chunk.choices[0]
-
-    if (!firstChoice) {
-      throw new Error('No response from OpenAI')
-    }
-
-    if (firstChoice.finish_reason === 'stop') {
-      yield response
-      break
-    }
-
-    if (firstChoice.finish_reason) {
-      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
-    }
-
-    response += firstChoice.delta.content || ''
-
-    if (shouldYield()) {
-      yield response
-    }
-  }
 }
 
 export async function* gptTransform({
@@ -92,7 +255,7 @@ export async function* gptTransform({
   input,
   returnExplanation,
   mockResponse,
-  useGpt3,
+  model = defaultModel,
   maxTokens = 4096,
   onCancel,
 }: {
@@ -102,22 +265,18 @@ export async function* gptTransform({
     new: string
   }[]
   maxTokens?: number
+  model?: AiModels
   input: string
   returnExplanation?: boolean
   mockResponse?: string
-  useGpt3?: boolean
   onCancel: RefacToolsCtx['onCancel']
 }) {
   if (mockResponse) {
     return mockResponse
   }
 
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
-
-  const responseStream = await openai.chat.completions.create({
+  return getAiResponseStream({
     model,
-    max_tokens: maxTokens,
-    stream: true,
     messages: [
       {
         role: 'system',
@@ -142,38 +301,9 @@ export async function* gptTransform({
         content: `"${escapeDoubleQuotes(input)}"`,
       },
     ],
+    onCancel,
+    maxTokens,
   })
-
-  let response = ''
-
-  onCancel(() => {
-    responseStream.controller.abort()
-  })
-
-  const { shouldYield } = throttledYield(1000)
-
-  for await (const chunk of responseStream) {
-    const firstChoice = chunk.choices[0]
-
-    if (!firstChoice) {
-      throw new Error('No response from OpenAI')
-    }
-
-    if (firstChoice.finish_reason === 'stop') {
-      yield response
-      break
-    }
-
-    if (firstChoice.finish_reason) {
-      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
-    }
-
-    response += firstChoice.delta.content || ''
-
-    if (shouldYield()) {
-      yield response
-    }
-  }
 }
 
 function escapeDoubleQuotes(str: string) {
@@ -190,7 +320,7 @@ type CodeRefactorProps = {
     refactored: string
   }[]
   oldCode: string
-  useGpt3?: boolean
+  model?: AiModels
   maxTokens?: number
 }
 
@@ -199,16 +329,11 @@ export async function gptCodeRefactor({
   oldCode,
   language,
   examples,
-  useGpt3,
+  model = defaultModel,
   maxTokens = 4096,
 }: CodeRefactorProps): Promise<string> {
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
-
-  const startTimestamp = Date.now()
-
-  const response = await openai.chat.completions.create({
+  const responseCode = await getAiResponse({
     model,
-    max_tokens: maxTokens,
     stop: 'NOT_APPLICABLE',
     messages: [
       {
@@ -220,23 +345,8 @@ export async function gptCodeRefactor({
         content: `${tripleBacktick}\n${oldCode}\n${tripleBacktick}`,
       },
     ],
+    maxTokens,
   })
-
-  const elapsed = Date.now() - startTimestamp
-
-  logUsage(elapsed, model, response)
-
-  const firstChoice = response.choices[0]
-
-  if (firstChoice?.finish_reason !== 'stop') {
-    throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
-  }
-
-  if (!firstChoice.message.content) {
-    throw new Error('No response from OpenAI')
-  }
-
-  const responseCode = firstChoice.message.content
 
   if (responseCode.includes('NOT_APPLICABLE')) {
     throw new Error('The instruction is not applicable to the code')
@@ -264,16 +374,12 @@ export async function* gptCodeRefactorStream({
   oldCode,
   language,
   examples,
-  useGpt3,
   maxTokens = 4096,
   onCancel,
+  model = defaultModel,
 }: CodeRefactorProps & { onCancel: RefacToolsCtx['onCancel'] }): AsyncGenerator<string> {
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
-
-  const responseStream = await openai.chat.completions.create({
+  for await (const response of getAiResponseStream({
     model,
-    max_tokens: maxTokens,
-    stream: true,
     stop: 'NOT_APPLICABLE',
     messages: [
       {
@@ -285,38 +391,80 @@ export async function* gptCodeRefactorStream({
         content: `${tripleBacktick}\n${oldCode}\n${tripleBacktick}`,
       },
     ],
-  })
-
-  onCancel(() => {
-    responseStream.controller.abort()
-  })
-
-  let response = ''
-
-  const { shouldYield } = throttledYield(1000)
-
-  for await (const chunk of responseStream) {
-    const firstChoice = chunk.choices[0]
-
-    if (!firstChoice) {
-      throw new Error('No response from OpenAI')
+    maxTokens,
+    onCancel,
+  })) {
+    if (response.includes('NOT_APPLICABLE')) {
+      throw new Error('The instruction is not applicable to the code')
     }
 
-    if (firstChoice.finish_reason === 'stop') {
-      yield response.replace(removeMarkdownMultilineCodeRegex, '')
-      break
-    }
-
-    if (firstChoice.finish_reason) {
-      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
-    }
-
-    response += firstChoice.delta.content || ''
-
-    if (shouldYield()) {
-      yield response.replace(removeMarkdownMultilineCodeRegex, '')
-    }
+    yield response.replace(removeMarkdownMultilineCodeRegex, '')
   }
+}
+
+export async function* gptAskAboutCode({
+  question,
+  contextCode,
+  selectedCode,
+  language,
+  maxTokens = 4096,
+  onCancel,
+  model = defaultModel,
+}: {
+  question: string
+  language: string
+  selectedCode?: string
+  contextCode: string
+  maxTokens?: number
+  onCancel: RefacToolsCtx['onCancel']
+  model?: AiModels
+}): AsyncGenerator<string> {
+  return getAiResponseStream({
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: joinStrings(
+          `You is a programmer expert for the language ${language}. Your task is to answer the questions or follow instructions about the following code as context:`,
+          `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
+          selectedCode &&
+            `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
+          `\n\nRespond using markdown. Do your best!`,
+        ),
+      },
+      {
+        role: 'user',
+        content: dedent(question),
+      },
+    ],
+    onCancel,
+    maxTokens,
+  })
+}
+
+export async function gptGenericPrompt({
+  prompt,
+  model = defaultModel,
+  maxTokens = 4096,
+}: {
+  prompt: string
+  maxTokens?: number
+  model?: AiModels
+}): Promise<string> {
+  return getAiResponse({
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: `You are a smart assistant. Follow the user's instructions carefully. Respond using markdown.`,
+      },
+      {
+        role: 'user',
+        content: dedent(prompt),
+      },
+    ],
+    maxTokens,
+  })
 }
 
 function throttledYield(ms: number): {
@@ -341,135 +489,21 @@ function throttledYield(ms: number): {
   }
 }
 
-export async function* gptAskAboutCode({
-  question,
-  contextCode,
-  useGpt3,
-  selectedCode,
-  language,
-  maxTokens = 4096,
-  onCancel,
-}: {
-  question: string
-  language: string
-  selectedCode?: string
-  contextCode: string
-  useGpt3?: boolean
-  maxTokens?: number
-  onCancel: RefacToolsCtx['onCancel']
-}): AsyncGenerator<string> {
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
-
-  const responseStream = await openai.chat.completions.create({
-    model,
-    max_tokens: maxTokens,
-    stream: true,
-    messages: [
-      {
-        role: 'system',
-        content: joinStrings(
-          `You is a programmer expert for the language ${language}. Your task is to answer the questions or follow instructions about the following code as context:`,
-          `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
-          selectedCode &&
-            `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
-          `\n\nRespond using markdown. Do your best!`,
-        ),
-      },
-      {
-        role: 'user',
-        content: dedent(question),
-      },
-    ],
-  })
-
-  let response = ''
-
-  onCancel(() => {
-    responseStream.controller.abort()
-  })
-
-  const { shouldYield } = throttledYield(1000)
-
-  for await (const chunk of responseStream) {
-    const firstChoice = chunk.choices[0]
-
-    if (!firstChoice) {
-      throw new Error('No response from OpenAI')
-    }
-
-    if (firstChoice.finish_reason === 'stop') {
-      yield response
-      break
-    }
-
-    if (firstChoice.finish_reason) {
-      throw new Error(`OpenAI error: ${firstChoice.finish_reason}`)
-    }
-
-    response += firstChoice.delta.content || ''
-
-    if (shouldYield()) {
-      yield response
-    }
-  }
-}
-
-export async function gptGenericPrompt({
-  prompt,
-  useGpt3,
-  maxTokens = 4096,
-}: {
-  prompt: string
-  useGpt3?: boolean
-  maxTokens?: number
-}): Promise<string> {
-  const model = useGpt3 ? 'gpt-3.5-turbo-1106' : 'gpt-4-1106-preview'
-
-  const startTimestamp = Date.now()
-
-  const response = await openai.chat.completions.create({
-    model,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: 'system',
-        content: `You are ChatGPT, a large language model trained by OpenAI. Follow the user's instructions carefully. Respond using markdown.`,
-      },
-      {
-        role: 'user',
-        content: dedent(prompt),
-      },
-    ],
-  })
-
-  const elapsed = Date.now() - startTimestamp
-
-  logUsage(elapsed, model, response)
-
-  const firstChoice = response.choices[0]
-
-  if (firstChoice?.finish_reason !== 'stop') {
-    throw new Error(`OpenAI did not finish: ${firstChoice?.finish_reason}`)
-  }
-
-  if (!firstChoice.message.content) {
-    throw new Error('No response from OpenAI')
-  }
-
-  return firstChoice.message.content
-}
-
 function logUsage(
   elapsed: number,
   model: string,
-  response: OpenAI.Chat.Completions.ChatCompletion,
+  responseUsage:
+    | {
+        prompt_tokens?: number
+        completion_tokens?: number
+        total_tokens?: number
+      }
+    | undefined,
 ) {
   refacTools.log(
-    `OpenAI took ${formatNum(
+    `Ai response took ${formatNum(
       elapsed / 1000,
-    )}s using model "${model}".\nTokens used:\n  Prompt: ${response.usage
-      ?.prompt_tokens}\n  Completion: ${response.usage
-      ?.completion_tokens}\n Total: ${response.usage?.total_tokens}`,
+    )}s using model "${model}".\nTokens used:\n  Prompt: ${responseUsage?.prompt_tokens}\n  Completion: ${responseUsage?.completion_tokens}\n Total: ${responseUsage?.total_tokens}`,
   )
 }
 
@@ -477,7 +511,7 @@ function generateCodePrompt(
   language: string,
   instructions: string,
   examples: { old: string; refactored: string }[] | undefined,
-): string | null {
+): string {
   return joinStrings(
     `You is a programming refactor expert. You will be provided with only ${language} code inputs inside markdown, like ${tripleBacktick}input code${tripleBacktick}. Your task is to refactor them according to the instruction: "${escapeDoubleQuotes(
       instructions,

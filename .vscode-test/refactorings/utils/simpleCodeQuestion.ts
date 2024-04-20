@@ -1,4 +1,4 @@
-import { gptAskAboutCode } from './openaiGpt'
+import { gptAskAboutCode } from './ai'
 
 export async function simpleCodeQuestion(
   instructions: string,

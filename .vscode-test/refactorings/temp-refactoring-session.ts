@@ -1,7 +1,6 @@
+import { gptCodeRefactor, gptCodeRefactorStream } from './utils/ai'
 import { dedent } from './utils/dedent'
 import { getRegexMatchAll, getRegexMatches } from './utils/getRegexMatches'
-import { gptCodeRefactor, gptCodeRefactorStream } from './utils/openaiGpt'
-import { joinStrings } from './utils/stringUtils'
 
 refacTools.config({
   name: 'Temp refactoring session',

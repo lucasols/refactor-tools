@@ -1,4 +1,4 @@
-import { gptTransform } from './utils/openaiGpt'
+import { gptTransform } from './utils/ai'
 
 refacTools.config({
   name: 'Correct grammar',

@@ -1,4 +1,4 @@
-import { gptCodeRefactor, gptCodeRefactorStream } from './utils/openaiGpt'
+import { gptCodeRefactor, gptCodeRefactorStream } from './utils/ai'
 
 type Variants = 'quickReplace'
 

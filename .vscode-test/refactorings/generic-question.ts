@@ -1,4 +1,4 @@
-import { smartAssistant } from './utils/openaiGpt'
+import { smartAssistant } from './utils/ai'
 
 type Variants = 'useGpt4' | 'useGpt3'
 
