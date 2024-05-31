@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { dedent } from './dedent'
 import { GROG_API_KEY, OPENAI_API_KEY } from './env'
 import { joinStrings } from './stringUtils'
+import { forEachRegexMatch } from './utils'
 
 const extractCodeRegex = /```(.*)\n([\s\S]+?)\n```/
 
@@ -21,8 +22,8 @@ type AiModels =
   | { service: 'grog'; model: GrogModels }
 
 const defaultModel: AiModels = {
-  service: 'grog',
-  model: 'llama-3-70b',
+  service: 'openai',
+  model: 'gpt-4',
 }
 
 const grogModels: Record<GrogModels, string> = {
@@ -45,7 +46,7 @@ async function* getAiResponseStream({
   stop?: string
 }): AsyncGenerator<string> {
   if (model.service === 'openai') {
-    const modelToUse = model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4-turbo'
+    const modelToUse = model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4o'
 
     const responseStream = await openai.chat.completions.create({
       model: modelToUse,
@@ -321,10 +322,15 @@ const tripleBacktick = '```'
 type CodeRefactorProps = {
   instructions: string
   language: string
-  examples?: {
-    old: string
-    refactored: string
-  }[]
+  /** use `// old` and `// new` comments to mark examples */
+  examples?:
+    | {
+        old: string
+        refactored: string
+      }[]
+    | string
+  /** use `// old` and `// wrong` comments to mark invalid examples */
+  invalidExamples?: string
   oldCode: string
   model?: AiModels
   maxTokens?: number
@@ -335,6 +341,7 @@ export async function gptCodeRefactor({
   oldCode,
   language,
   examples,
+  invalidExamples,
   model = defaultModel,
   maxTokens = 4096,
 }: CodeRefactorProps): Promise<string> {
@@ -344,7 +351,7 @@ export async function gptCodeRefactor({
     messages: [
       {
         role: 'system',
-        content: generateCodePrompt(language, instructions, examples),
+        content: generateCodePrompt(language, instructions, examples, invalidExamples),
       },
       {
         role: 'user',
@@ -381,6 +388,7 @@ export async function* gptCodeRefactorStream({
   language,
   examples,
   maxTokens = 4096,
+  invalidExamples,
   onCancel,
   model = defaultModel,
 }: CodeRefactorProps & { onCancel: RefacToolsCtx['onCancel'] }): AsyncGenerator<string> {
@@ -390,7 +398,7 @@ export async function* gptCodeRefactorStream({
     messages: [
       {
         role: 'system',
-        content: generateCodePrompt(language, instructions, examples),
+        content: generateCodePrompt(language, instructions, examples, invalidExamples),
       },
       {
         role: 'user',
@@ -518,25 +526,40 @@ function logUsage(
 function generateCodePrompt(
   language: string,
   instructions: string,
-  examples: { old: string; refactored: string }[] | undefined,
+  examples: { old: string; refactored: string }[] | undefined | string,
+  invalidExamples: string | undefined,
 ): string {
-  return joinStrings(
+  const codePrompt = joinStrings(
     `You is a programming refactor expert. You will be provided with only ${language} code inputs inside markdown, like ${tripleBacktick}input code${tripleBacktick}. Your task is to refactor them according to the instruction: "${escapeDoubleQuotes(
       instructions,
     )}", and return ONLY the resulting code. If the instruction cannot be followed, return just NOT_APPLICABLE.`,
     examples &&
       examples.length > 0 &&
-      `\n\nConsider the following references for your task:\n\n${examples
-        .map(
-          (e) =>
-            `Old:\n${tripleBacktick}\n${dedent(
-              e.old,
-            )}\n${tripleBacktick}\n\nRefactored:\n${tripleBacktick}\n${dedent(
-              e.refactored,
-            )}\n${tripleBacktick}`,
-        )
-        .join('\n\n-----\n\n')}`,
+      `\n\nConsider the following references for your task:\n\n${
+        typeof examples === 'string' ?
+          normalizeExamples(examples, 'Refactored', 'new')
+        : examples
+            .map(
+              (e) =>
+                `Before:\n${tripleBacktick}\n${dedent(
+                  e.old,
+                )}\n${tripleBacktick}\n\nRefactored:\n${tripleBacktick}\n${dedent(
+                  e.refactored,
+                )}\n${tripleBacktick}`,
+            )
+            .join('\n\n-----\n\n')
+      }`,
+    invalidExamples &&
+      `\n\nConsider the following invalid examples, as reference for WRONG answers:\n\n${normalizeExamples(
+        invalidExamples,
+        'Wrong refactor',
+        'wrong',
+      )}`,
   )
+
+  refacTools.log(`Code prompt:\n${codePrompt}`)
+
+  return codePrompt
 }
 
 function formatNum(num: number) {
@@ -544,4 +567,62 @@ function formatNum(num: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+function normalizeExamples(
+  examplesMd: string,
+  referenceLabel: string,
+  referenceCommentRegex: string,
+): string {
+  const examplesToUse: { old: string; reference: string }[] = []
+
+  const extractExamplesRegex = new RegExp(
+    `~~~[\\s\\S]+?// old.+?\\s([\\s\\S]+?)// ${referenceCommentRegex}.+?\\s([\\s\\S]+?)~~~`,
+    'g',
+  )
+
+  if (!examplesMd.includes(`// ${referenceCommentRegex}`)) {
+    throw new Error(
+      `${referenceCommentRegex} not found in examples, received:\n` + examplesMd,
+    )
+  }
+
+  if (!examplesMd.includes('// old')) {
+    throw new Error('Old code not found in examples, received:\n' + examplesMd)
+  }
+
+  forEachRegexMatch(
+    extractExamplesRegex,
+    examplesMd,
+    ({ groups: [old = '', newCode = ''] }) => {
+      if (!old.trim() || !newCode.trim()) {
+        throw new Error('Invalid example')
+      }
+
+      examplesToUse.push({
+        old: old.trim(),
+        reference: newCode.trim(),
+      })
+    },
+  )
+
+  if (examplesToUse.length === 0) {
+    throw new Error('Examples is invalid')
+  }
+
+  return examplesToUse
+    .map(
+      ({ old, reference }) =>
+        dedent`
+Before:
+${tripleBacktick}
+${old}
+${tripleBacktick}
+
+${referenceLabel}:
+${tripleBacktick}
+${reference}
+${tripleBacktick}`,
+    )
+    .join('\n\n-----\n\n')
 }

@@ -3,7 +3,18 @@ import { gptCodeRefactor, gptCodeRefactorStream } from './ai'
 export async function simpleRefactor(
   instructions: string,
   ctx: RefacToolsCtx<'quickReplace'>,
-  useGpt3?: boolean,
+  {
+    examples,
+    invalidExamples,
+  }: {
+    examples?:
+      | {
+          old: string
+          refactored: string
+        }[]
+      | string
+    invalidExamples?: string
+  } = {},
 ) {
   const activeEditor = ctx.getActiveEditor()
 
@@ -18,6 +29,8 @@ export async function simpleRefactor(
       instructions,
       oldCode: selectedCode.text,
       language: selectedCode.language,
+      examples,
+      invalidExamples,
     })
 
     await selectedCode.replaceWith(refactoredCode)
@@ -28,6 +41,8 @@ export async function simpleRefactor(
   const refactoredCode = gptCodeRefactorStream({
     instructions,
     oldCode: selectedCode.text,
+    invalidExamples,
+    examples,
     language: selectedCode.language,
     onCancel: ctx.onCancel,
   })
