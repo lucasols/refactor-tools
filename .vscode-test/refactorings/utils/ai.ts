@@ -46,13 +46,19 @@ async function* getAiResponseStream({
   stop?: string
 }): AsyncGenerator<string> {
   if (model.service === 'openai') {
-    const modelToUse = model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4o'
+    const startTimestamp = Date.now()
+
+    const modelToUse =
+      model.model === 'gpt-3.5' ? 'gpt-3.5-turbo-1106' : 'gpt-4o-2024-08-06'
 
     const responseStream = await openai.chat.completions.create({
       model: modelToUse,
       max_tokens: maxTokens,
       stop,
       stream: true,
+      stream_options: {
+        include_usage: true,
+      },
       messages: messages,
     })
 
@@ -65,6 +71,12 @@ async function* getAiResponseStream({
     const { shouldYield } = throttledYield(1000)
 
     for await (const chunk of responseStream) {
+      if (chunk.usage) {
+        const elapsed = Date.now() - startTimestamp
+        logUsage(elapsed, modelToUse, chunk.usage)
+        break
+      }
+
       const firstChoice = chunk.choices[0]
 
       if (!firstChoice) {
@@ -73,7 +85,7 @@ async function* getAiResponseStream({
 
       if (firstChoice.finish_reason === 'stop') {
         yield response
-        break
+        continue
       }
 
       if (firstChoice.finish_reason) {

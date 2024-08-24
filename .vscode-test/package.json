@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "openai": "^4.19.0",
+    "openai": "^4.56.0",
     "runcheck": "^0.53.0",
     "typescript": "^5.3.2",
     "groq-sdk": "^0.3.2"
