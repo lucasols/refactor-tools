@@ -1,7 +1,8 @@
+import AnthropicClient from '@anthropic-ai/sdk'
 import Grog from 'groq-sdk'
 import OpenAI from 'openai'
 import { dedent } from './dedent'
-import { GROG_API_KEY, OPENAI_API_KEY } from './env'
+import { ANTHROPIC_API_KEY, GROG_API_KEY, OPENAI_API_KEY } from './env'
 import { joinStrings } from './stringUtils'
 import { forEachRegexMatch } from './utils'
 
@@ -15,15 +16,20 @@ const grog = new Grog({
   apiKey: GROG_API_KEY,
 })
 
+const anthropic = new AnthropicClient({
+  apiKey: ANTHROPIC_API_KEY,
+})
+
 type GrogModels = 'llama-3-70b' | 'llama-3-8b' | 'mixtral-8x7b'
 
 type AiModels =
   | { service: 'openai'; model: 'gpt-4' | 'gpt-3.5' }
   | { service: 'grog'; model: GrogModels }
+  | { service: 'anthropic'; model: 'claude-3.5-sonnet' }
 
 const defaultModel: AiModels = {
-  service: 'openai',
-  model: 'gpt-4',
+  service: 'anthropic',
+  model: 'claude-3.5-sonnet',
 }
 
 const grogModels: Record<GrogModels, string> = {
@@ -32,15 +38,21 @@ const grogModels: Record<GrogModels, string> = {
   'mixtral-8x7b': 'mixtral-8x7b-32768',
 }
 
+const anthropicModels: Record<(AiModels & { service: 'anthropic' })['model'], string> = {
+  'claude-3.5-sonnet': 'claude-3-5-sonnet-20240620',
+}
+
 async function* getAiResponseStream({
   model,
   messages,
+  systemPrompt,
   onCancel,
   stop,
   maxTokens,
 }: {
   model: AiModels
-  messages: { role: 'system' | 'user'; content: string }[]
+  systemPrompt: string
+  messages: { role: 'assistant' | 'user'; content: string }[]
   onCancel?: (fn: () => void) => void
   maxTokens?: number
   stop?: string
@@ -59,7 +71,17 @@ async function* getAiResponseStream({
       stream_options: {
         include_usage: true,
       },
-      messages: messages,
+      messages: [
+        ...(systemPrompt ?
+          [
+            {
+              role: 'system' as const,
+              content: systemPrompt,
+            },
+          ]
+        : []),
+        ...messages,
+      ],
     })
 
     let response = ''
@@ -110,7 +132,17 @@ async function* getAiResponseStream({
       max_tokens: maxTokens,
       stream: true,
       stop,
-      messages: messages,
+      messages: [
+        ...(systemPrompt ?
+          [
+            {
+              role: 'system' as const,
+              content: systemPrompt,
+            },
+          ]
+        : []),
+        ...messages,
+      ],
     })
 
     let response = ''
@@ -146,6 +178,57 @@ async function* getAiResponseStream({
 
     return response
   }
+
+  if (model.service === 'anthropic') {
+    const startTimestamp = Date.now()
+
+    const responseStream = await anthropic.messages.create({
+      model: anthropicModels[model.model],
+      max_tokens: maxTokens ?? 8192,
+      system: systemPrompt,
+      messages: messages,
+      stream: true,
+    })
+
+    let response = ''
+
+    onCancel?.(() => {
+      responseStream.controller.abort()
+    })
+
+    const { shouldYield } = throttledYield(1000)
+
+    const usage: {
+      prompt_tokens?: number
+      completion_tokens?: number
+    } = {}
+
+    for await (const chunk of responseStream) {
+      if (chunk.type === 'message_start') {
+        usage.prompt_tokens = chunk.message.usage.input_tokens
+      }
+
+      if (chunk.type === 'message_delta') {
+        usage.completion_tokens = chunk.usage.output_tokens
+      }
+
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        response += chunk.delta.text || ''
+
+        if (shouldYield()) {
+          yield response
+        }
+      }
+    }
+
+    const elapsed = Date.now() - startTimestamp
+
+    logUsage(elapsed, model.model, usage) // Rough estimate
+
+    return response
+  }
+
+  throw new Error('No AI model selected')
 }
 
 export async function getAiResponse({
@@ -153,10 +236,12 @@ export async function getAiResponse({
   messages,
   maxTokens,
   stop,
+  systemPrompt,
 }: {
   model: AiModels
   stop?: string
-  messages: { role: 'system' | 'user'; content: string }[]
+  systemPrompt: string
+  messages: { role: 'assistant' | 'user'; content: string }[]
   maxTokens?: number
 }): Promise<string> {
   if (model.service === 'openai') {
@@ -167,7 +252,17 @@ export async function getAiResponse({
     const response = await openai.chat.completions.create({
       model: modelToUse,
       max_tokens: maxTokens,
-      messages,
+      messages: [
+        ...(systemPrompt ?
+          [
+            {
+              role: 'system' as const,
+              content: systemPrompt,
+            },
+          ]
+        : []),
+        ...messages,
+      ],
       stop,
     })
 
@@ -196,7 +291,17 @@ export async function getAiResponse({
     const response = await grog.chat.completions.create({
       model: modelToUse,
       max_tokens: maxTokens,
-      messages,
+      messages: [
+        ...(systemPrompt ?
+          [
+            {
+              role: 'system' as const,
+              content: systemPrompt,
+            },
+          ]
+        : []),
+        ...messages,
+      ],
       stop,
     })
 
@@ -215,6 +320,30 @@ export async function getAiResponse({
     }
 
     return firstChoice.message.content
+  }
+
+  if (model.service === 'anthropic') {
+    const startTimestamp = Date.now()
+
+    const response = await anthropic.messages.create({
+      model: anthropicModels[model.model],
+      max_tokens: maxTokens ?? 8192,
+      system: systemPrompt,
+      messages: messages,
+    })
+
+    const elapsed = Date.now() - startTimestamp
+
+    logUsage(elapsed, model.model, { total_tokens: response.usage.output_tokens })
+
+    const content =
+      response.content[0]?.type === 'text' ? response.content[0]?.text : null
+
+    if (!content) {
+      throw new Error('No response from Anthropic')
+    }
+
+    return content
   }
 
   throw new Error('No AI model selected')
@@ -241,19 +370,16 @@ export async function* smartAssistant({
 
   for await (const response of getAiResponseStream({
     model,
+    systemPrompt: joinStrings(
+      `You are a smart assistant. Your task is to answer the user's questions or follow instructions.`,
+      selectedText ?
+        `\n\nThe user is using a text editor and has selected the following text: "${escapeDoubleQuotes(
+          selectedText,
+        )}"`
+      : '',
+      '\n\nRespond using markdown.',
+    ),
     messages: [
-      {
-        role: 'system',
-        content: joinStrings(
-          `You are a smart assistant. Your task is to answer the user's questions or follow instructions.`,
-          selectedText ?
-            `\n\nThe user is using a text editor and has selected the following text: "${escapeDoubleQuotes(
-              selectedText,
-            )}"`
-          : '',
-          '\n\nRespond using markdown.',
-        ),
-      },
       {
         role: 'user',
         content: prompt,
@@ -294,25 +420,20 @@ export async function* gptTransform({
 
   for await (const response of getAiResponseStream({
     model,
+    systemPrompt: joinStrings(
+      `You is a text smart transformer. You will be provided with only inputs. Your task is to convert them according to the instruction: "${escapeDoubleQuotes(
+        prompt,
+      )}".`,
+      returnExplanation ?
+        `, and return the output along with an explanation of your changes in markdown.`
+      : `, and return ONLY the output.`,
+      examples && examples.length > 0 ?
+        `\nConsider the following references for your task:\n${examples
+          .map((e) => `"${escapeDoubleQuotes(e.old)}" -> "${escapeDoubleQuotes(e.new)}"`)
+          .join('\n')}`
+      : ``,
+    ),
     messages: [
-      {
-        role: 'system',
-        content: joinStrings(
-          `You is a text smart transformer. You will be provided with only inputs. Your task is to convert them according to the instruction: "${escapeDoubleQuotes(
-            prompt,
-          )}".`,
-          returnExplanation ?
-            `, and return the output along with an explanation of your changes in markdown.`
-          : `, and return ONLY the output.`,
-          examples && examples.length > 0 ?
-            `\nConsider the following references for your task:\n${examples
-              .map(
-                (e) => `"${escapeDoubleQuotes(e.old)}" -> "${escapeDoubleQuotes(e.new)}"`,
-              )
-              .join('\n')}`
-          : ``,
-        ),
-      },
       {
         role: 'user',
         content: `"${escapeDoubleQuotes(input)}"`,
@@ -360,11 +481,8 @@ export async function gptCodeRefactor({
   const responseCode = await getAiResponse({
     model,
     stop: 'NOT_APPLICABLE',
+    systemPrompt: generateCodePrompt(language, instructions, examples, invalidExamples),
     messages: [
-      {
-        role: 'system',
-        content: generateCodePrompt(language, instructions, examples, invalidExamples),
-      },
       {
         role: 'user',
         content: `${tripleBacktick}\n${oldCode}\n${tripleBacktick}`,
@@ -407,11 +525,8 @@ export async function* gptCodeRefactorStream({
   for await (const response of getAiResponseStream({
     model,
     stop: 'NOT_APPLICABLE',
+    systemPrompt: generateCodePrompt(language, instructions, examples, invalidExamples),
     messages: [
-      {
-        role: 'system',
-        content: generateCodePrompt(language, instructions, examples, invalidExamples),
-      },
       {
         role: 'user',
         content: `${tripleBacktick}\n${oldCode}\n${tripleBacktick}`,
@@ -447,17 +562,14 @@ export async function* gptAskAboutCode({
 }): AsyncGenerator<string> {
   for await (const response of getAiResponseStream({
     model,
+    systemPrompt: joinStrings(
+      `You is a programmer expert for the language ${language}. Your task is to answer the questions or follow instructions about the following code as context:`,
+      `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
+      selectedCode &&
+        `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
+      `\n\nRespond using markdown. Do your best!`,
+    ),
     messages: [
-      {
-        role: 'system',
-        content: joinStrings(
-          `You is a programmer expert for the language ${language}. Your task is to answer the questions or follow instructions about the following code as context:`,
-          `\n\n${tripleBacktick}\n${contextCode}\n${tripleBacktick}`,
-          selectedCode &&
-            `\n\nThe user has selected the following code from above:\n\n${tripleBacktick}\n${selectedCode}\n${tripleBacktick}`,
-          `\n\nRespond using markdown. Do your best!`,
-        ),
-      },
       {
         role: 'user',
         content: dedent(question),
@@ -481,11 +593,8 @@ export async function gptGenericPrompt({
 }): Promise<string> {
   return getAiResponse({
     model,
+    systemPrompt: `You are a smart assistant. Follow the user's instructions carefully. Respond using markdown.`,
     messages: [
-      {
-        role: 'system',
-        content: `You are a smart assistant. Follow the user's instructions carefully. Respond using markdown.`,
-      },
       {
         role: 'user',
         content: dedent(prompt),
@@ -531,7 +640,9 @@ function logUsage(
   refacTools.log(
     `Ai response took ${formatNum(
       elapsed / 1000,
-    )}s using model "${model}".\nTokens used:\n  Prompt: ${responseUsage?.prompt_tokens}\n  Completion: ${responseUsage?.completion_tokens}\n Total: ${responseUsage?.total_tokens}`,
+    )}s using model "${model}".\nTokens used:\n  Prompt: ${responseUsage?.prompt_tokens}\n  Output: ${responseUsage?.completion_tokens}\n Total: ${
+      (responseUsage?.prompt_tokens ?? 0) + (responseUsage?.completion_tokens ?? 0)
+    }`,
   )
 }
 
