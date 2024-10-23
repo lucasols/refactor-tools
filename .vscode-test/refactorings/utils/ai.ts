@@ -39,7 +39,7 @@ const grogModels: Record<GrogModels, string> = {
 }
 
 const anthropicModels: Record<(AiModels & { service: 'anthropic' })['model'], string> = {
-  'claude-3.5-sonnet': 'claude-3-5-sonnet-20240620',
+  'claude-3.5-sonnet': 'claude-3-5-sonnet-latest',
 }
 
 async function* getAiResponseStream({
